@@ -100,8 +100,11 @@ function renderStartPage(root, state, render) {
     state.currentPage = 'map';
     state.mapType = mapData.mapType;
     state.tiles = mapData.tiles;
+    state.points = mapData.points;
     state.coreCandidates = mapData.coreCandidates;
     state.selectedCoreIndex = null;
+    state.selectedCorePointId = null;
+    state.selectedCoreAdjacentTileIds = [];
     state.assignedWorkers = [];
     render();
   });
@@ -156,7 +159,9 @@ function renderCorePage(root, state, render) {
         <div class="notice">
           ${selected ? `
             <h2>候选核心聚落 ${state.selectedCoreIndex + 1}</h2>
-            <p>相邻地块：${selected.tileIndexes.map((tileIndex) => TERRAIN_LABELS[state.tiles[tileIndex]]).join('、')}</p>
+            <p>相邻地块编号：${selected.adjacentTileIds.join('、')}</p>
+            <p>相邻地块类型：${selected.tileIndexes.map((tileIndex) => TERRAIN_LABELS[state.tiles[tileIndex].terrain]).join('、')}</p>
+            <p class="safe-site-note">该点资源完整，包含草原 / 森林 / 山地，可作为核心聚落。</p>
             <p>初始容量：8户</p>
             <p>资源上限：食物30 / 燃料30 / 材料30</p>
           ` : '<p>请选择一个候选核心聚落点。</p>'}
@@ -182,9 +187,11 @@ function renderCorePage(root, state, render) {
 
   root.querySelector('[data-action="confirm"]').addEventListener('click', () => {
     const candidate = state.coreCandidates[state.selectedCoreIndex];
+    state.selectedCorePointId = candidate.id;
+    state.selectedCoreAdjacentTileIds = [...candidate.adjacentTileIds];
     state.assignedWorkers = candidate.tileIndexes.map((tileIndex) => ({
       tileIndex,
-      terrain: state.tiles[tileIndex],
+      terrain: state.tiles[tileIndex].terrain,
       workers: 0,
       progress: 0,
     }));
@@ -504,7 +511,6 @@ function renderIslandMap(state, options = {}) {
         options.size ?? 'mini',
         options.showIndexes ? index + 1 : '',
         highlightedTiles.has(index),
-        index,
       )).join('')}
       ${options.showCandidates ? renderMapCandidates(state) : ''}
     </div>
@@ -512,19 +518,10 @@ function renderIslandMap(state, options = {}) {
 }
 
 function renderMapCandidates(state) {
-  const positions = [
-    { left: 44, top: 31 },
-    { left: 57, top: 31 },
-    { left: 33, top: 50 },
-    { left: 46, top: 50 },
-    { left: 59, top: 50 },
-    { left: 40, top: 69 },
-  ];
-
   return state.coreCandidates.map((candidate, index) => `
     <button
       class="map-candidate ${state.selectedCoreIndex === index ? 'is-selected' : ''}"
-      style="left: ${positions[index].left}%; top: ${positions[index].top}%;"
+      style="left: ${candidate.x}%; top: ${candidate.y}%;"
       type="button"
       data-map-candidate="${index}"
       aria-label="候选核心聚落 ${index + 1}"
@@ -532,25 +529,9 @@ function renderMapCandidates(state) {
   `).join('');
 }
 
-function renderTile(terrain, size, label = '', isHighlighted = false, index = 0) {
-  const position = TILE_POSITIONS[index];
-  return `<div class="hex ${terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}" style="left: ${position.left}%; top: ${position.top}%;">${label || TERRAIN_LABELS[terrain]}</div>`;
+function renderTile(tile, size, label = '', isHighlighted = false) {
+  return `<div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">${label || TERRAIN_LABELS[tile.terrain]}</div>`;
 }
-
-const TILE_POSITIONS = [
-  { left: 24, top: 5 },
-  { left: 38, top: 5 },
-  { left: 52, top: 5 },
-  { left: 17, top: 24 },
-  { left: 31, top: 24 },
-  { left: 45, top: 24 },
-  { left: 59, top: 24 },
-  { left: 24, top: 43 },
-  { left: 38, top: 43 },
-  { left: 52, top: 43 },
-  { left: 31, top: 62 },
-  { left: 45, top: 62 },
-];
 
 function formatNumber(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
