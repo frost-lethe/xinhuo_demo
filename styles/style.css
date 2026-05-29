@@ -32,7 +32,8 @@ body {
 }
 
 .intro,
-.notice {
+.notice,
+.panel {
   border: 1px solid var(--border);
   background: var(--panel);
   border-radius: 8px;
@@ -90,4 +91,84 @@ h2 {
   margin-bottom: 0;
   color: var(--muted);
   line-height: 1.7;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.stat-grid > div {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fffdf7;
+}
+
+.mini-map,
+.large-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(54px, 1fr));
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.hex {
+  display: grid;
+  place-items: center;
+  color: #102019;
+  font-weight: 700;
+  clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+}
+
+.hex.mini {
+  min-height: 58px;
+  font-size: 0.85rem;
+}
+
+.hex.large {
+  min-height: 78px;
+}
+
+.hex.grassland {
+  background: #a8d58d;
+}
+
+.hex.forest {
+  color: #fff;
+  background: #2f6f48;
+}
+
+.hex.mountain {
+  color: #fff;
+  background: #7890a4;
+}
+
+.candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.candidate-button {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #fffdf7;
+  cursor: pointer;
+}
+
+.candidate-button.is-selected {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
