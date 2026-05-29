@@ -495,7 +495,7 @@ function renderIslandMap(state, options = {}) {
     ? state.coreCandidates[state.selectedCoreIndex]
     : null;
   const highlightedTiles = new Set(selected?.tileIndexes ?? []);
-  const classes = ['island-map', options.size === 'large' ? 'large-map' : 'mini-map'];
+  const classes = ['map-board', options.size === 'large' ? 'large-map' : 'mini-map'];
 
   return `
     <div class="${classes.join(' ')}" aria-label="12个六边形地块组成的小岛地图">
@@ -504,6 +504,7 @@ function renderIslandMap(state, options = {}) {
         options.size ?? 'mini',
         options.showIndexes ? index + 1 : '',
         highlightedTiles.has(index),
+        index,
       )).join('')}
       ${options.showCandidates ? renderMapCandidates(state) : ''}
     </div>
@@ -512,12 +513,12 @@ function renderIslandMap(state, options = {}) {
 
 function renderMapCandidates(state) {
   const positions = [
-    { left: 41, top: 18 },
-    { left: 58, top: 31 },
-    { left: 30, top: 43 },
-    { left: 51, top: 55 },
-    { left: 69, top: 57 },
-    { left: 43, top: 76 },
+    { left: 44, top: 31 },
+    { left: 57, top: 31 },
+    { left: 33, top: 50 },
+    { left: 46, top: 50 },
+    { left: 59, top: 50 },
+    { left: 40, top: 69 },
   ];
 
   return state.coreCandidates.map((candidate, index) => `
@@ -531,9 +532,25 @@ function renderMapCandidates(state) {
   `).join('');
 }
 
-function renderTile(terrain, size, label = '', isHighlighted = false) {
-  return `<div class="hex ${terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}">${label || TERRAIN_LABELS[terrain]}</div>`;
+function renderTile(terrain, size, label = '', isHighlighted = false, index = 0) {
+  const position = TILE_POSITIONS[index];
+  return `<div class="hex ${terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}" style="left: ${position.left}%; top: ${position.top}%;">${label || TERRAIN_LABELS[terrain]}</div>`;
 }
+
+const TILE_POSITIONS = [
+  { left: 24, top: 5 },
+  { left: 38, top: 5 },
+  { left: 52, top: 5 },
+  { left: 17, top: 24 },
+  { left: 31, top: 24 },
+  { left: 45, top: 24 },
+  { left: 59, top: 24 },
+  { left: 24, top: 43 },
+  { left: 38, top: 43 },
+  { left: 52, top: 43 },
+  { left: 31, top: 62 },
+  { left: 45, top: 62 },
+];
 
 function formatNumber(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);

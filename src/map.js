@@ -34,12 +34,17 @@ function createTiles(counts) {
   return shuffle(tiles);
 }
 
-function createCoreCandidates(tileCount) {
-  const starts = [0, 2, 4, 6, 8, 9];
-
-  return starts.map((start, index) => ({
+function createCoreCandidates() {
+  return [
+    [0, 1, 4],
+    [1, 2, 5],
+    [3, 4, 7],
+    [4, 5, 8],
+    [5, 6, 9],
+    [7, 8, 10],
+  ].map((tileIndexes, index) => ({
     id: index,
-    tileIndexes: [start, (start + 1) % tileCount, (start + 3) % tileCount],
+    tileIndexes,
   }));
 }
 
