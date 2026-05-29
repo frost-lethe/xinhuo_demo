@@ -123,9 +123,7 @@ function renderMapPage(root, state, render) {
           <div>${mapConfig.earlyDisaster}</div>
           <div>${mapConfig.midDisaster}</div>
         </div>
-        <div class="mini-map" aria-label="12个缩略六边形地块">
-          ${state.tiles.map((terrain) => renderTile(terrain, 'mini')).join('')}
-        </div>
+        ${renderIslandMap(state, { size: 'mini' })}
         <button class="primary-action" type="button" data-action="core">进入选址</button>
       </section>
     </main>
@@ -147,9 +145,7 @@ function renderCorePage(root, state, render) {
       <section class="panel">
         <p class="eyebrow">核心聚落选址</p>
         <h1>选择第${state.generation}世的核心聚落</h1>
-        <div class="large-map">
-          ${state.tiles.map((terrain, index) => renderTile(terrain, 'large', index + 1)).join('')}
-        </div>
+        ${renderIslandMap(state, { size: 'large', showIndexes: true, showCandidates: true })}
         <div class="candidate-list">
           ${state.coreCandidates.map((candidate, index) => `
             <button class="candidate-button ${state.selectedCoreIndex === index ? 'is-selected' : ''}" type="button" data-candidate="${index}">
@@ -173,6 +169,13 @@ function renderCorePage(root, state, render) {
   root.querySelectorAll('[data-candidate]').forEach((button) => {
     button.addEventListener('click', () => {
       state.selectedCoreIndex = Number(button.dataset.candidate);
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-map-candidate]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.selectedCoreIndex = Number(button.dataset.mapCandidate);
       render();
     });
   });
@@ -319,7 +322,7 @@ function renderWorkCard(work, index, isRunning) {
   const seconds = work.workers > 0
     ? (Math.max(0, rule.progressNeeded - work.progress) / work.workers)
     : null;
-  const progressPercent = Math.min(100, work.progress);
+  const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
 
   return `
     <article class="work-card">
@@ -487,8 +490,49 @@ function unassignWorker(state, index) {
   state.idleHouseholds += 1;
 }
 
-function renderTile(terrain, size, label = '') {
-  return `<div class="hex ${terrain} ${size}">${label || TERRAIN_LABELS[terrain]}</div>`;
+function renderIslandMap(state, options = {}) {
+  const selected = Number.isInteger(state.selectedCoreIndex)
+    ? state.coreCandidates[state.selectedCoreIndex]
+    : null;
+  const highlightedTiles = new Set(selected?.tileIndexes ?? []);
+  const classes = ['island-map', options.size === 'large' ? 'large-map' : 'mini-map'];
+
+  return `
+    <div class="${classes.join(' ')}" aria-label="12个六边形地块组成的小岛地图">
+      ${state.tiles.map((terrain, index) => renderTile(
+        terrain,
+        options.size ?? 'mini',
+        options.showIndexes ? index + 1 : '',
+        highlightedTiles.has(index),
+      )).join('')}
+      ${options.showCandidates ? renderMapCandidates(state) : ''}
+    </div>
+  `;
+}
+
+function renderMapCandidates(state) {
+  const positions = [
+    { left: 41, top: 18 },
+    { left: 58, top: 31 },
+    { left: 30, top: 43 },
+    { left: 51, top: 55 },
+    { left: 69, top: 57 },
+    { left: 43, top: 76 },
+  ];
+
+  return state.coreCandidates.map((candidate, index) => `
+    <button
+      class="map-candidate ${state.selectedCoreIndex === index ? 'is-selected' : ''}"
+      style="left: ${positions[index].left}%; top: ${positions[index].top}%;"
+      type="button"
+      data-map-candidate="${index}"
+      aria-label="候选核心聚落 ${index + 1}"
+    >⌂</button>
+  `).join('');
+}
+
+function renderTile(terrain, size, label = '', isHighlighted = false) {
+  return `<div class="hex ${terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}">${label || TERRAIN_LABELS[terrain]}</div>`;
 }
 
 function formatNumber(value) {

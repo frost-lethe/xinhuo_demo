@@ -31,20 +31,20 @@ export const WORK_RULES = Object.freeze({
   grassland: {
     name: '采集',
     resource: 'food',
-    amount: 6,
-    progressNeeded: 100,
+    amount: 3,
+    progressNeeded: 50,
   },
   forest: {
     name: '伐木',
     resource: 'fuel',
-    amount: 6,
-    progressNeeded: 100,
+    amount: 3,
+    progressNeeded: 50,
   },
   mountain: {
     name: '拾石',
     resource: 'material',
-    amount: 5,
-    progressNeeded: 100,
+    amount: 3,
+    progressNeeded: 50,
   },
 });
 

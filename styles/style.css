@@ -115,6 +115,82 @@ h2 {
   margin: 20px 0;
 }
 
+.island-map {
+  position: relative;
+  width: min(620px, 100%);
+  display: grid;
+  grid-template-columns: repeat(8, minmax(30px, 1fr));
+  grid-template-rows: repeat(4, auto);
+  gap: 0;
+  margin: 20px auto;
+  padding: 10px 0;
+}
+
+.island-map .hex {
+  width: 100%;
+  margin: -5px 0;
+}
+
+.island-map .hex:nth-of-type(1) {
+  grid-column: 2 / span 2;
+  grid-row: 1;
+}
+
+.island-map .hex:nth-of-type(2) {
+  grid-column: 4 / span 2;
+  grid-row: 1;
+}
+
+.island-map .hex:nth-of-type(3) {
+  grid-column: 6 / span 2;
+  grid-row: 1;
+}
+
+.island-map .hex:nth-of-type(4) {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+}
+
+.island-map .hex:nth-of-type(5) {
+  grid-column: 3 / span 2;
+  grid-row: 2;
+}
+
+.island-map .hex:nth-of-type(6) {
+  grid-column: 5 / span 2;
+  grid-row: 2;
+}
+
+.island-map .hex:nth-of-type(7) {
+  grid-column: 7 / span 2;
+  grid-row: 2;
+}
+
+.island-map .hex:nth-of-type(8) {
+  grid-column: 2 / span 2;
+  grid-row: 3;
+}
+
+.island-map .hex:nth-of-type(9) {
+  grid-column: 4 / span 2;
+  grid-row: 3;
+}
+
+.island-map .hex:nth-of-type(10) {
+  grid-column: 6 / span 2;
+  grid-row: 3;
+}
+
+.island-map .hex:nth-of-type(11) {
+  grid-column: 3 / span 2;
+  grid-row: 4;
+}
+
+.island-map .hex:nth-of-type(12) {
+  grid-column: 5 / span 2;
+  grid-row: 4;
+}
+
 .hex {
   display: grid;
   place-items: center;
@@ -124,12 +200,14 @@ h2 {
 }
 
 .hex.mini {
-  min-height: 58px;
+  aspect-ratio: 1.12;
+  min-height: 54px;
   font-size: 0.85rem;
 }
 
 .hex.large {
-  min-height: 78px;
+  aspect-ratio: 1.12;
+  min-height: 84px;
 }
 
 .hex.grassland {
@@ -144,6 +222,33 @@ h2 {
 .hex.mountain {
   color: #fff;
   background: #7890a4;
+}
+
+.hex.is-highlighted {
+  outline: 4px solid var(--accent);
+  outline-offset: -4px;
+  filter: saturate(1.15);
+}
+
+.map-candidate {
+  position: absolute;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent-dark);
+  box-shadow: 0 2px 8px rgb(31 42 36 / 0.28);
+  cursor: pointer;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.map-candidate.is-selected {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgb(182 70 47 / 0.25);
 }
 
 .candidate-list {
