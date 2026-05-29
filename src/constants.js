@@ -27,12 +27,6 @@ export const RESOURCE_LABELS = Object.freeze({
   material: '材料',
 });
 
-export const TERRAIN_COLORS = Object.freeze({
-  grassland: '#a8d58d',
-  forest: '#2f6f48',
-  mountain: '#7890a4',
-});
-
 export const WORK_RULES = Object.freeze({
   grassland: {
     name: '采集',
