@@ -1,0 +1,9 @@
+import { TILE_TYPES } from './constants.js';
+
+export function createPlaceholderMap() {
+  return [
+    [TILE_TYPES.GRASSLAND, TILE_TYPES.FOREST, TILE_TYPES.MOUNTAIN],
+    [TILE_TYPES.GRASSLAND, TILE_TYPES.GRASSLAND, TILE_TYPES.FOREST],
+    [TILE_TYPES.MOUNTAIN, TILE_TYPES.FOREST, TILE_TYPES.GRASSLAND],
+  ];
+}
