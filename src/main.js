@@ -1,6 +1,6 @@
 import { createInitialState } from './state.js';
-import { renderApp } from './ui.js';
+import { createGameUI } from './ui.js';
 
 const state = createInitialState();
 
-renderApp(state);
+createGameUI(document.querySelector('#app'), state);
