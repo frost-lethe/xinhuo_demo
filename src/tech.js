@@ -25,6 +25,20 @@ export const TECH_DEFINITIONS = Object.freeze({
     prerequisite: 'ember',
     description: '食物上限 +20%。',
   },
+  bronze: {
+    id: 'bronze',
+    name: '青铜',
+    requirement: 100,
+    prerequisite: 'stone',
+    description: '解锁山地采石，建设成本 -10%。',
+  },
+  writing: {
+    id: 'writing',
+    name: '文字',
+    requirement: 100,
+    prerequisite: 'stone',
+    description: '科研效率 +20%，灭亡后遗产点 +1。',
+  },
 });
 
 export function createInitialTechState() {

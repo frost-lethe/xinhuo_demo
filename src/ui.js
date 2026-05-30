@@ -416,6 +416,7 @@ function renderPlaceholderPage(root, title, body) {
 
 function renderLostPage(root, state, render) {
   const researchedTechs = getResearchedTechNames(state);
+  const legacyPoints = getAvailableLegacyPoints(state);
 
   root.innerHTML = `
     <main class="app-shell">
@@ -430,7 +431,7 @@ function renderLostPage(root, state, render) {
           <div>本世已研究科技 ${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
           <div>普通聚落数量 ${state.ordinarySettlementCount}</div>
           <div>仓库数量 ${state.warehouseCount}</div>
-          <div>可留下文明遗产 1 点</div>
+          <div>可留下文明遗产 ${legacyPoints} 点</div>
         </div>
         <button class="primary-action" type="button" data-action="choose-legacy">选择文明遗产</button>
       </section>
@@ -439,46 +440,65 @@ function renderLostPage(root, state, render) {
 
   root.querySelector('[data-action="choose-legacy"]').addEventListener('click', () => {
     state.pendingLegacyChoice = null;
+    state.pendingLegacyChoices = [];
     state.currentPage = 'legacy';
     render();
   });
 }
 
 function renderLegacyPage(root, state, render) {
-  const selected = LEGACY_OPTIONS.find((option) => option.id === state.pendingLegacyChoice);
+  const legacyPoints = getAvailableLegacyPoints(state);
+  const selectedIds = state.pendingLegacyChoices ?? (state.pendingLegacyChoice ? [state.pendingLegacyChoice] : []);
+  const selectedOptions = LEGACY_OPTIONS.filter((option) => selectedIds.includes(option.id));
+  const usedPoints = selectedIds.length;
+  const remainingPoints = legacyPoints - usedPoints;
 
   root.innerHTML = `
     <main class="app-shell">
       <section class="panel">
         <p class="eyebrow">文明遗产</p>
         <h1>选择传给下一世的薪火</h1>
-        <p>当前可用遗产点：1</p>
+        <p>可用遗产点：${legacyPoints}</p>
+        <p>已用遗产点：${usedPoints}</p>
+        <p>剩余遗产点：${remainingPoints}</p>
+        <p>已选遗产：${selectedOptions.length > 0 ? selectedOptions.map((option) => option.name).join('、') : '无'}</p>
         <div class="legacy-options">
           ${LEGACY_OPTIONS.map((option) => `
-            <button class="legacy-option ${state.pendingLegacyChoice === option.id ? 'is-selected' : ''}" type="button" data-legacy="${option.id}">
+            <button class="legacy-option ${selectedIds.includes(option.id) ? 'is-selected' : ''}" type="button" data-legacy="${option.id}">
               <strong>${option.name}</strong>
               <span>${option.description}</span>
             </button>
           `).join('')}
         </div>
         <div class="notice">
-          ${selected ? `<p>${selected.description}</p>` : '<p>请选择一个遗产选项。</p>'}
+          ${selectedOptions.length > 0 ? selectedOptions.map((option) => `<p>${option.description}</p>`).join('') : '<p>请选择遗产选项。</p>'}
+          ${remainingPoints <= 0 ? '<p>遗产点已用完。</p>' : ''}
         </div>
-        <button class="primary-action" type="button" data-action="confirm-legacy" ${selected ? '' : 'disabled'}>确认遗产，开始下一世</button>
+        <button class="primary-action" type="button" data-action="confirm-legacy" ${selectedOptions.length > 0 ? '' : 'disabled'}>确认遗产，开始下一世</button>
       </section>
     </main>
   `;
 
   root.querySelectorAll('[data-legacy]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.pendingLegacyChoice = button.dataset.legacy;
+      const nextSelectedIds = new Set(state.pendingLegacyChoices ?? []);
+      if (nextSelectedIds.has(button.dataset.legacy)) {
+        nextSelectedIds.delete(button.dataset.legacy);
+      } else if (nextSelectedIds.size < legacyPoints) {
+        nextSelectedIds.add(button.dataset.legacy);
+      } else {
+        window.alert?.('遗产点不足');
+      }
+      state.pendingLegacyChoices = Array.from(nextSelectedIds);
+      state.pendingLegacyChoice = state.pendingLegacyChoices[0] ?? null;
       render();
     });
   });
 
   root.querySelector('[data-action="confirm-legacy"]').addEventListener('click', () => {
-    const choice = LEGACY_OPTIONS.find((option) => option.id === state.pendingLegacyChoice);
-    state.activeLegacyBonus = choice;
+    const choices = LEGACY_OPTIONS.filter((option) => (state.pendingLegacyChoices ?? []).includes(option.id));
+    state.activeLegacyBonuses = choices;
+    state.activeLegacyBonus = choices[0] ?? null;
     state.generation += 1;
     prepareGeneration(state, generateMap());
     render();
@@ -580,6 +600,8 @@ function renderPointModal(state, disasterEffects) {
   const distance = getNearestSettlementDistance(point.id, state);
   const inRange = isPointWithinInfluence(point.id, state);
   const buildable = isPointBuildable(point.id, state);
+  const settlementCost = getBuildingCost(state, { food: 6, fuel: 8, material: 12 });
+  const warehouseCost = getBuildingCost(state, { food: 3, fuel: 5, material: 12 });
   const typeLabel = {
     core: '核心聚落',
     ordinarySettlement: '普通聚落',
@@ -651,8 +673,8 @@ function renderPointModal(state, disasterEffects) {
             `}
             ${state.isRunning ? '<p>运行中不可建造，请暂停或等待本纪结束。</p>' : ''}
             <div class="controls">
-              <button type="button" data-action="build-point-settlement" ${!buildable || !canAfford(state, { food: 6, fuel: 8, material: 12 }) ? 'disabled' : ''}>建造普通聚落</button>
-              <button type="button" data-action="build-point-warehouse" ${!buildable || !canAfford(state, { food: 3, fuel: 5, material: 12 }) ? 'disabled' : ''}>建造仓库</button>
+              <button type="button" data-action="build-point-settlement" ${!buildable || !canAfford(state, settlementCost) ? 'disabled' : ''}>建造普通聚落（食物${settlementCost.food} / 燃料${settlementCost.fuel} / 材料${settlementCost.material}）</button>
+              <button type="button" data-action="build-point-warehouse" ${!buildable || !canAfford(state, warehouseCost) ? 'disabled' : ''}>建造仓库（食物${warehouseCost.food} / 燃料${warehouseCost.fuel} / 材料${warehouseCost.material}）</button>
             </div>
           </div>
         ` : ''}
@@ -664,9 +686,11 @@ function renderPointModal(state, disasterEffects) {
 }
 
 function renderTechPanel(state) {
+  const researchMultiplier = getResearchMultiplier(state);
   return `
     <section class="tech-panel">
       <h2>技术研究</h2>
+      ${researchMultiplier > 1 ? '<p class="safe-site-note">文字已解锁：科研效率 +20%</p>' : ''}
       <div class="tech-list">
         ${Object.entries(TECH_DEFINITIONS).map(([techId, definition]) => renderTechCard(state, techId, definition)).join('')}
       </div>
@@ -677,7 +701,7 @@ function renderTechPanel(state) {
 function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
   const warehouseReduction = state.warehouseCount * 5;
-  const nextInfluenceCost = getInfluenceUpgradeCost(state.influenceLevel + 1);
+  const nextInfluenceCost = getBuildingCost(state, getInfluenceUpgradeCost(state.influenceLevel + 1));
   const householdCost = getHouseholdGrowthCost(state);
   const householdCostNote = isTechUnlocked(state, 'agriculture') ? '农耕使增户成本降低。' : '';
   const growText = state.households >= state.householdCapacity
@@ -771,7 +795,7 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
 }
 
 function renderJobSwitchControl(state, work, index) {
-  if (![TERRAIN.GRASSLAND, TERRAIN.FOREST].includes(work.terrain)) {
+  if (![TERRAIN.GRASSLAND, TERRAIN.FOREST, TERRAIN.MOUNTAIN].includes(work.terrain)) {
     return '';
   }
 
@@ -1126,6 +1150,17 @@ function getHouseholdGrowthCost(state) {
   };
 }
 
+function getBuildingCost(state, baseCost) {
+  const multiplier = isTechUnlocked(state, 'bronze') ? 0.9 : 1;
+
+  return Object.fromEntries(
+    Object.entries(baseCost).map(([resource, amount]) => [
+      resource,
+      Math.ceil(amount * multiplier),
+    ]),
+  );
+}
+
 function expandSettlement(state) {
   const cost = { food: 5, fuel: 5, material: 10 };
 
@@ -1161,7 +1196,7 @@ function buildWarehouse(state) {
 
 function upgradeInfluence(state) {
   const nextLevel = state.influenceLevel + 1;
-  const cost = getInfluenceUpgradeCost(nextLevel);
+  const cost = getBuildingCost(state, getInfluenceUpgradeCost(nextLevel));
 
   if (!canAdjust(state) || state.influenceLevel >= 4 || !canAfford(state, cost)) {
     return;
@@ -1176,13 +1211,13 @@ function upgradeInfluence(state) {
 }
 
 function buildOrdinarySettlement(state, pointId) {
-  const cost = { food: 6, fuel: 8, material: 12 };
+  const cost = getBuildingCost(state, { food: 6, fuel: 8, material: 12 });
 
   if (!pointId || !canAdjust(state) || !isPointBuildable(pointId, state) || !canAfford(state, cost)) {
     return;
   }
 
-  if (!window.confirm('建造普通聚落将消耗 食物6、燃料8、材料12。效果：户容量+6，三资源上限+20，并解锁相邻地块工作。是否确认？')) {
+  if (!window.confirm(`建造普通聚落将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：户容量+6，三资源上限+20，并解锁相邻地块工作。是否确认？`)) {
     return;
   }
 
@@ -1195,13 +1230,13 @@ function buildOrdinarySettlement(state, pointId) {
 }
 
 function buildPointWarehouse(state, pointId) {
-  const cost = { food: 3, fuel: 5, material: 12 };
+  const cost = getBuildingCost(state, { food: 3, fuel: 5, material: 12 });
 
   if (!pointId || !canAdjust(state) || !isPointBuildable(pointId, state) || !canAfford(state, cost)) {
     return;
   }
 
-  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少灾害库存损失5%。仓库不会扩展影响范围。是否确认？')) {
+  if (!window.confirm(`建造仓库将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：三资源上限+20，并减少灾害库存损失5%。仓库不会扩展影响范围。是否确认？`)) {
     return;
   }
 
@@ -1254,6 +1289,14 @@ function refreshResourceCaps(state) {
   };
 }
 
+function getResearchMultiplier(state) {
+  return isTechUnlocked(state, 'writing') ? 1.2 : 1;
+}
+
+function getAvailableLegacyPoints(state) {
+  return isTechUnlocked(state, 'writing') ? 2 : 1;
+}
+
 function canAdjust(state) {
   return !state.isRunning;
 }
@@ -1269,7 +1312,10 @@ function advanceResearch(state, deltaSeconds) {
       return;
     }
 
-    tech.progress = Math.min(definition.requirement, tech.progress + tech.workers * deltaSeconds);
+    tech.progress = Math.min(
+      definition.requirement,
+      tech.progress + tech.workers * deltaSeconds * getResearchMultiplier(state),
+    );
 
     if (tech.progress >= definition.requirement) {
       tech.unlocked = true;
@@ -1473,6 +1519,7 @@ function prepareGeneration(state, mapData) {
   state.speed = 1;
   state.settlementLines = [];
   state.pendingLegacyChoice = null;
+  state.pendingLegacyChoices = [];
 }
 
 function resetRunToStart(state) {
@@ -1504,7 +1551,9 @@ function resetRunToStart(state) {
   state.ordinarySettlementCount = 0;
   state.warehouseCount = 0;
   state.activeLegacyBonus = null;
+  state.activeLegacyBonuses = [];
   state.pendingLegacyChoice = null;
+  state.pendingLegacyChoices = [];
   state.techs = createInitialTechState();
   state.eventLog = [];
   state.lastEventText = null;

@@ -23,9 +23,9 @@ export const LEGACY_OPTIONS = Object.freeze([
 ]);
 
 export function getLegacyBonus(state, key) {
-  if (!state.activeLegacyBonus || state.activeLegacyBonus.key !== key) {
-    return 0;
-  }
+  const bonuses = state.activeLegacyBonuses ?? (state.activeLegacyBonus ? [state.activeLegacyBonus] : []);
 
-  return state.activeLegacyBonus.value;
+  return bonuses
+    .filter((bonus) => bonus.key === key)
+    .reduce((sum, bonus) => sum + bonus.value, 0);
 }

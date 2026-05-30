@@ -70,6 +70,15 @@ export const JOB_DEFINITIONS = Object.freeze({
     amount: 3,
     progressNeeded: 50,
   },
+  quarrying: {
+    id: 'quarrying',
+    name: '采石',
+    terrain: TERRAIN.MOUNTAIN,
+    requiredTech: 'bronze',
+    resource: 'material',
+    amount: 6,
+    progressNeeded: 50,
+  },
 });
 
 export const DEFAULT_JOBS = Object.freeze({
