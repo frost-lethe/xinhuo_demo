@@ -219,42 +219,35 @@ function renderMainPage(root, state, render, startTimer) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
 
   root.innerHTML = `
-    <main class="app-shell game-layout">
-      <section class="panel">
-        <p class="eyebrow">原始聚落</p>
-        <h1>第${state.generation}世 · 第${state.era}纪 / ${MAX_ERA}</h1>
-        <div class="stat-grid">
-          <div>户 ${state.households}/${state.householdCapacity}</div>
-          <div>空闲户 ${state.idleHouseholds}</div>
-          <div>食物 ${formatNumber(state.resources.food)}/${state.resourceCaps.food}</div>
-          <div>燃料 ${formatNumber(state.resources.fuel)}/${state.resourceCaps.fuel}</div>
-          <div>材料 ${formatNumber(state.resources.material)}/${state.resourceCaps.material}</div>
-          <div>倒计时 ${formatNumber(state.timeLeft)}秒</div>
-        </div>
-        <div class="disaster-current">
-          <strong>${disasterEffects.warning}</strong>
-        </div>
+    ${renderTopHud(state)}
+    ${renderEventWarningPanel(state, disasterEffects)}
+    ${renderRightActionRail()}
+    <main class="app-shell game-layout main-hud-layout">
+      <section class="panel main-stage-panel">
         ${renderMainMap(state, disasterEffects)}
         ${renderSelectedTilePanel(state, disasterEffects)}
-        <div class="work-list">
-          ${state.assignedWorkers.map((work, index) => renderWorkCard(state, work, index, state.isRunning, disasterEffects)).join('')}
-        </div>
-        ${renderSettlementDevelopmentPanel(state)}
-        <div class="controls">
-          <button class="primary-action" type="button" data-action="start-era" ${state.isRunning || state.timeLeft < ERA_SECONDS ? 'disabled' : ''}>开始本纪</button>
-          <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
-          <button type="button" data-speed="1" class="${state.speed === 1 ? 'is-selected' : ''}">1x</button>
-          <button type="button" data-speed="2" class="${state.speed === 2 ? 'is-selected' : ''}">2x</button>
-          <button type="button" data-speed="5" class="${state.speed === 5 ? 'is-selected' : ''}">5x</button>
-        </div>
-        ${renderTechPanel(state)}
       </section>
-      <aside class="panel event-panel">
-        <h2>事件 / 预警</h2>
-        ${state.eventLog.length > 0 ? `<ul>${state.eventLog.map((event) => `<li>${event}</li>`).join('')}</ul>` : '<p>本纪尚未开始。</p>'}
-      </aside>
+      ${renderPanelModal(state, disasterEffects)}
     </main>
   `;
+
+  root.querySelectorAll('[data-open-panel]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.openPanel = button.dataset.openPanel;
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-close-panel]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.openPanel = null;
+      render();
+    });
+  });
+
+  root.querySelector('[data-panel-modal]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
 
   root.querySelectorAll('[data-assign]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -358,6 +351,100 @@ function renderMainPage(root, state, render, startTimer) {
       render();
     });
   });
+}
+
+function renderTopHud(state) {
+  const timerText = state.isRunning
+    ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
+    : state.timeLeft < ERA_SECONDS
+      ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
+      : '准备阶段';
+
+  return `
+    <header class="top-hud">
+      <div class="hud-left">
+        <strong>原始聚落</strong>
+        <span>地图 ${state.mapType}</span>
+        <span>第 ${state.generation} 世</span>
+        <span>第 ${state.era} / ${MAX_ERA} 纪</span>
+        <span>总计 ${state.households} / ${state.householdCapacity} 户</span>
+        <span>空闲户 ${state.idleHouseholds}</span>
+        <span>食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}</span>
+        <span>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</span>
+        <span>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</span>
+      </div>
+      <div class="hud-timer">${timerText}</div>
+      <div class="hud-controls">
+        <button class="primary-action" type="button" data-action="start-era" ${state.isRunning || state.timeLeft < ERA_SECONDS ? 'disabled' : ''}>开始本纪</button>
+        <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
+        <button type="button" data-speed="1" class="${state.speed === 1 ? 'is-selected' : ''}">1x</button>
+        <button type="button" data-speed="2" class="${state.speed === 2 ? 'is-selected' : ''}">2x</button>
+        <button type="button" data-speed="5" class="${state.speed === 5 ? 'is-selected' : ''}">5x</button>
+        <button type="button" data-speed="10" class="${state.speed === 10 ? 'is-selected' : ''}">10x</button>
+      </div>
+    </header>
+  `;
+}
+
+function renderEventWarningPanel(state, disasterEffects) {
+  const recentEvents = state.eventLog.slice(-4);
+
+  return `
+    <aside class="event-warning-panel">
+      <h2>事件与预警</h2>
+      <p>${disasterEffects.warning}</p>
+      ${recentEvents.length > 0
+        ? `<ul>${recentEvents.map((event) => `<li>${event}</li>`).join('')}</ul>`
+        : '<p>本纪尚未开始。</p>'}
+    </aside>
+  `;
+}
+
+function renderRightActionRail() {
+  return `
+    <nav class="right-action-rail" aria-label="功能入口">
+      <button class="action-rail-button" type="button" data-open-panel="tech">科技</button>
+      <button class="action-rail-button" type="button" data-open-panel="development">聚落发展</button>
+      <button class="action-rail-button" type="button" data-open-panel="work">工作分配</button>
+    </nav>
+  `;
+}
+
+function renderPanelModal(state, disasterEffects) {
+  if (!state.openPanel) {
+    return '';
+  }
+
+  const titles = {
+    tech: '科技',
+    development: '聚落发展',
+    work: '工作分配',
+  };
+  const body = {
+    tech: renderTechPanel(state),
+    development: renderSettlementDevelopmentPanel(state),
+    work: `
+      <section class="work-assignment-panel">
+        <div class="work-list">
+          ${state.assignedWorkers.map((work, index) => renderWorkCard(state, work, index, state.isRunning, disasterEffects)).join('')}
+        </div>
+      </section>
+    `,
+  }[state.openPanel] ?? '';
+
+  return `
+    <div class="modal-overlay" data-close-panel>
+      <section class="modal-panel" role="dialog" aria-modal="true" data-panel-modal>
+        <header class="modal-header">
+          <h2>${titles[state.openPanel] ?? '面板'}</h2>
+          <button type="button" data-close-panel>关闭</button>
+        </header>
+        <div class="modal-body">
+          ${body}
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function renderSettlementPage(root, state, render) {
@@ -560,7 +647,7 @@ function renderMainMap(state, disasterEffects) {
 
 function renderSelectedTilePanel(state, disasterEffects) {
   if (!Number.isInteger(state.selectedTileIndex)) {
-    return '<section class="object-panel"><h2>选中对象</h2><p>点击地图地块查看详情。</p></section>';
+    return '';
   }
 
   const tile = state.tiles[state.selectedTileIndex];
@@ -1485,6 +1572,7 @@ function prepareGeneration(state, mapData) {
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
   state.openPointId = null;
+  state.openPanel = null;
   state.influenceLevel = 1;
   state.pointBuildings = {};
   state.householdCapacity = 8;
@@ -1535,6 +1623,7 @@ function resetRunToStart(state) {
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
   state.openPointId = null;
+  state.openPanel = null;
   state.influenceLevel = 1;
   state.pointBuildings = {};
   state.householdCapacity = 8;
