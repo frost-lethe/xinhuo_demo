@@ -125,6 +125,66 @@ export function getDisasterAtmosphere(mapType, era) {
   return '远处传来风声，族人更加警醒。';
 }
 
+export function getEventLogText(state, second) {
+  const currentEffects = getEraDisasterEffects(state.mapType, state.era, state);
+  const nextEffects = getEraDisasterEffects(state.mapType, state.era + 1, state);
+  const currentCategory = getEventCategory(currentEffects.disasterNames);
+  const nextCategory = getEventCategory(nextEffects.disasterNames);
+  const resourceText = getLowResourceText(state);
+  const techText = getTechText(state);
+  let text = null;
+
+  if (currentCategory) {
+    text = pick(EVENT_TEXTS.active[currentCategory]);
+  } else if (second === 40 && nextCategory) {
+    text = pick(EVENT_TEXTS.warning[nextCategory]);
+  } else if (resourceText) {
+    text = resourceText;
+  } else if (techText) {
+    text = techText;
+  } else if (state.generation > 1 && Math.random() < 0.35) {
+    text = pick(EVENT_TEXTS.legacy);
+  } else if ([3, 7, 11].includes(state.era)) {
+    text = pick(EVENT_TEXTS.uneasy);
+  } else {
+    text = pick([...EVENT_TEXTS.calm, ...EVENT_TEXTS.uneasy]);
+  }
+
+  if (text === state.lastEventText) {
+    const fallback = currentCategory ? EVENT_TEXTS.active[currentCategory] : EVENT_TEXTS.calm;
+    text = fallback.find((item) => item !== text) ?? text;
+  }
+
+  state.lastEventText = text;
+  return text;
+}
+
+function getEventCategory(disasterNames) {
+  if (disasterNames.includes('终末失序')) return '终末失序';
+  if (disasterNames.includes('寒潮') || disasterNames.includes('严冬')) return '寒潮';
+  if (disasterNames.includes('干旱') || disasterNames.includes('大旱')) return '干旱';
+  if (disasterNames.includes('兽群')) return '兽群';
+  if (disasterNames.includes('洪水')) return '洪水';
+  if (disasterNames.includes('地震')) return '地震';
+  return null;
+}
+
+function getLowResourceText(state) {
+  if (state.resources.food < state.resourceCaps.food * 0.25) return pick(EVENT_TEXTS.low.food);
+  if (state.resources.fuel < state.resourceCaps.fuel * 0.25) return pick(EVENT_TEXTS.low.fuel);
+  if (state.resources.material < state.resourceCaps.material * 0.25) return pick(EVENT_TEXTS.low.material);
+  return null;
+}
+
+function getTechText(state) {
+  if (state.eventLog.some((item) => item.includes('火种研究完成'))) return pick(EVENT_TEXTS.tech.ember);
+  if (state.eventLog.some((item) => item.includes('石器研究完成'))) return pick(EVENT_TEXTS.tech.stone);
+  if (Object.values(state.techs ?? {}).some((tech) => tech.workers > 0 && !tech.unlocked)) {
+    return pick(EVENT_TEXTS.tech.researching);
+  }
+  return null;
+}
+
 function applyMapDisaster(effects, mapType, era, state) {
   const profile = getMapDisasterProfile(mapType);
 
@@ -272,3 +332,128 @@ function createWarning(effects) {
 function pick(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
+
+const EVENT_TEXTS = Object.freeze({
+  calm: [
+    '一切安好，炊烟从聚落上方缓缓升起。',
+    '孩子们在草地边追逐，老人说今年或许能多存下一些粮。',
+    '文明正在蒸蒸日上，新的分工让每个人都看见了明天。',
+    '仓储里的物资安静堆放着，今天没有坏消息。',
+    '有人开始讨论下一处开拓地，火光照亮了他们的脸。',
+    '聚落里传来敲打石器的声音，秩序正在形成。',
+    '这一纪暂时平稳，文明得以喘息。',
+  ],
+  uneasy: [
+    '族老说，风的方向不太对。',
+    '巡行的户带回消息：远处的天色比往常更暗。',
+    '有人梦见仓库空了，但醒来时火还在燃。',
+    '野兽的足迹出现在更近的地方。',
+    '草叶卷曲，土地似乎比昨日更沉默。',
+    '孩子们不再追问远方有什么，大人们也没有回答。',
+    '有人在夜里听见低沉的回响，像是大地在翻身。',
+  ],
+  warning: {
+    寒潮: [
+      '北方的风提前抵达，火堆旁的人坐得更近了。',
+      '猎户说，林间的霜来得太早。',
+      '有人开始担心燃料是否足够撑过下一纪。',
+    ],
+    干旱: [
+      '草原的颜色正在变浅，土地失去湿意。',
+      '取水的人回来得更晚了。',
+      '族老提醒众人：下一纪也许不适合只依赖草原。',
+    ],
+    兽群: [
+      '夜色里传来成群的低吼。',
+      '边缘地带出现了凌乱的足迹。',
+      '外出的人变少了，聚落边缘的火被添得更旺。',
+    ],
+    洪水: [
+      '河水上涨得比往年更快。',
+      '潮气钻进燃料堆，仓储变得不再可靠。',
+      '低地传来水声，像有什么正在靠近。',
+    ],
+    地震: [
+      '杯中的水面无风自颤。',
+      '墙体出现细小裂纹，但没人愿意先说出口。',
+      '大地偶尔传来沉闷的声响。',
+    ],
+    终末失序: [
+      '有人梦见第十五纪没有日出。',
+      '星象变得陌生，历法上的记号失去意义。',
+      '储藏本身也开始让人不安，仿佛世界正在松开秩序。',
+      '族老说，这不是一场灾，而是一切规则都开始疲惫。',
+    ],
+  },
+  active: {
+    寒潮: [
+      '寒意压低了火焰，燃料变得比昨日更珍贵。',
+      '风像刀一样掠过聚落边缘。',
+      '每一户都在靠近火，但火也在更快地消耗。',
+    ],
+    干旱: [
+      '土地干裂，草原上的收获变得迟缓。',
+      '粮食没有立刻消失，但丰收已经远去。',
+      '人们抬头看天，云却没有回应。',
+    ],
+    兽群: [
+      '兽群逼近，边缘的户不再独自外出。',
+      '夜里有影子掠过火光之外。',
+      '材料被拿去加固屏障，而不是建造新屋。',
+    ],
+    洪水: [
+      '水声淹没了低地，库存开始变得脆弱。',
+      '潮湿侵入燃料堆，干燥的东西越来越少。',
+      '人们把物资搬向高处，但仍有一部分留在水里。',
+    ],
+    地震: [
+      '大地发出低沉的响声。',
+      '墙体出现裂纹，材料储备被迅速消耗。',
+      '没有人知道下一次震动会从哪里开始。',
+    ],
+    终末失序: [
+      '世界不是降下一场灾，而是在逐渐松开秩序。',
+      '储藏开始流失，仿佛物资本身也在遗忘形状。',
+      '火还在燃，但火光照不清远方。',
+      '第十五纪越来越近，所有人都开始沉默。',
+    ],
+  },
+  low: {
+    food: [
+      '粮仓见底，聚落里的谈话声变轻了。',
+      '有人开始数每一份食物能撑到哪一天。',
+      '饥饿还没有夺走人，但已经夺走了笑声。',
+    ],
+    fuel: [
+      '火堆变小了，夜晚显得更长。',
+      '燃料不足，守夜的人把手缩进袖中。',
+      '没有火的夜晚，比灾害本身更让人害怕。',
+    ],
+    material: [
+      '材料储备不足，许多修补只能暂时搁置。',
+      '人们知道墙需要加固，但仓里没有足够的石材。',
+      '每一次建设都变成艰难选择。',
+    ],
+  },
+  tech: {
+    researching: [
+      '有人把经验刻在石片上，试图让下一次不再从零开始。',
+      '火边的讨论持续到深夜，知识正在慢慢成形。',
+      '年轻人开始追问：为什么每一纪都要重复同样的错误？',
+    ],
+    ember: [
+      '火种被更好地保存下来，寒冷不再完全不可抵抗。',
+      '人们学会让火延续，而不只是等待它熄灭。',
+    ],
+    stone: [
+      '石器变得更加锋利，山地不再只是危险，也成为资源。',
+      '工具改变了手，也改变了文明理解世界的方式。',
+    ],
+  },
+  legacy: [
+    '上一世留下的记忆仍在影响这一世的选择。',
+    '没有人完整记得过去，但某些做法被保留了下来。',
+    '薪火不是同一群人活下来，而是某些东西没有断。',
+    '这一世的人不知道前人的名字，却走在他们铺出的影子上。',
+  ],
+});

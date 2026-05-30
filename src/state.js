@@ -19,6 +19,8 @@ export function createInitialState() {
     selectedCoreIndex: null,
     selectedCorePointId: null,
     selectedCoreAdjacentTileIds: [],
+    selectedTileIndex: null,
+    openPointId: null,
     households: INITIAL_HOUSEHOLDS,
     householdCapacity: INITIAL_HOUSEHOLD_CAPACITY,
     idleHouseholds: INITIAL_HOUSEHOLDS,

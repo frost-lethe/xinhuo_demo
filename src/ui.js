@@ -9,8 +9,8 @@ import {
 } from './constants.js';
 import {
   DISASTER_DESCRIPTIONS,
-  getDisasterAtmosphere,
   getEraDisasterEffects,
+  getEventLogText,
   getBuildingCount,
   getMapDisasterProfile,
   getWorkEfficiencyMultiplier,
@@ -238,6 +238,8 @@ function renderMainPage(root, state, render, startTimer) {
         <div class="disaster-current">
           <strong>${disasterEffects.warning}</strong>
         </div>
+        ${renderMainMap(state, disasterEffects)}
+        ${renderSelectedTilePanel(state, disasterEffects)}
         <div class="work-list">
           ${state.assignedWorkers.map((work, index) => renderWorkCard(state, work, index, state.isRunning, disasterEffects)).join('')}
         </div>
@@ -270,6 +272,30 @@ function renderMainPage(root, state, render, startTimer) {
       unassignWorker(state, Number(button.dataset.unassign));
       render();
     });
+  });
+
+  root.querySelectorAll('[data-main-tile]').forEach((tile) => {
+    tile.addEventListener('click', () => {
+      state.selectedTileIndex = Number(tile.dataset.mainTile);
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-main-point]').forEach((point) => {
+    point.addEventListener('click', (event) => {
+      event.stopPropagation();
+      state.openPointId = point.dataset.mainPoint;
+      render();
+    });
+  });
+
+  root.querySelector('[data-action="close-point-modal"]')?.addEventListener('click', () => {
+    state.openPointId = null;
+    render();
+  });
+
+  root.querySelector('[data-point-modal]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
   });
 
   root.querySelectorAll('[data-tech-assign]').forEach((button) => {
@@ -486,6 +512,108 @@ function renderVictoryPage(root, state, render) {
   });
 }
 
+function renderMainMap(state, disasterEffects) {
+  return `
+    <section class="main-map-panel">
+      <h2>文明地图</h2>
+      ${renderIslandMap(state, {
+        size: 'large',
+        showIndexes: true,
+        showCorePoint: true,
+        showAllPoints: true,
+        showWorkStatus: true,
+        clickableTiles: true,
+        disasterEffects,
+      })}
+      ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
+    </section>
+  `;
+}
+
+function renderSelectedTilePanel(state, disasterEffects) {
+  if (!Number.isInteger(state.selectedTileIndex)) {
+    return '<section class="object-panel"><h2>选中对象</h2><p>点击地图地块查看详情。</p></section>';
+  }
+
+  const tile = state.tiles[state.selectedTileIndex];
+  const work = getWorkForTile(state, state.selectedTileIndex);
+  const inRange = isTileInWorkRange(state, state.selectedTileIndex);
+  const rule = work ? getWorkRule(state, work.terrain) : WORK_RULES[tile.terrain];
+  const efficiency = getWorkEfficiencyMultiplier(disasterEffects, tile.terrain);
+  const effectText = efficiency < 1
+    ? `本纪灾害影响：效率 ${formatNumber(efficiency * 100)}%。`
+    : '本纪未受到工作效率灾害影响。';
+
+  return `
+    <section class="object-panel">
+      <h2>${TERRAIN_LABELS[tile.terrain]}地块 ${tile.id}</h2>
+      <p>是否在当前文明工作范围内：${inRange ? '是' : '否'}</p>
+      <p>当前工作：${rule.name}</p>
+      <p>工人：${work?.workers ?? 0} / 3</p>
+      <p>进度：${formatNumber(work?.progress ?? 0)} / ${rule.progressNeeded}</p>
+      <p>预计产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
+      <p>${effectText}</p>
+    </section>
+  `;
+}
+
+function renderPointModal(state, disasterEffects) {
+  const point = state.points.find((item) => item.id === state.openPointId);
+
+  if (!point) {
+    return '';
+  }
+
+  const adjacentTypes = point.adjacentTileIds
+    .map((tileId) => TERRAIN_LABELS[state.tiles[tileId - 1].terrain])
+    .join('、');
+  const pointType = point.id === state.selectedCorePointId ? '核心聚落' : '空点';
+  const inRange = point.adjacentTileIds.some((tileId) => state.selectedCoreAdjacentTileIds.includes(tileId));
+  const adjacentWork = point.adjacentTileIds
+    .map((tileId) => {
+      const tileIndex = tileId - 1;
+      const tile = state.tiles[tileIndex];
+      const work = getWorkForTile(state, tileIndex);
+      const rule = work ? getWorkRule(state, work.terrain) : WORK_RULES[tile.terrain];
+
+      return `
+        <li>
+          地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：
+          ${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}
+        </li>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="point-modal-backdrop" data-action="close-point-modal">
+      <section class="point-modal" role="dialog" aria-modal="true" data-point-modal>
+        <h2>地图点 ${point.id.slice(0, 6)}</h2>
+        <p>点类型：${pointType}</p>
+        <p>相邻地块编号：${point.adjacentTileIds.join('、')}</p>
+        <p>相邻地块类型：${adjacentTypes}</p>
+        <p>是否属于当前可工作范围：${inRange ? '是' : '否'}</p>
+        ${pointType === '核心聚落' ? `
+          <div class="notice">
+            <p>核心聚落</p>
+            <p>户容量贡献：8</p>
+            <p>基础资源上限贡献：食物30 / 燃料30 / 材料30</p>
+            <p>相邻地块已纳入文明工作范围。</p>
+          </div>
+        ` : `
+          <div class="notice">
+            <p>当前为空点。</p>
+            <p>未来版本可在此建设普通聚落或仓库。</p>
+            <p>建设需要文明影响范围或开拓能力，本轮暂未实装。</p>
+          </div>
+        `}
+        <h3>相邻地块工作情况</h3>
+        <ul>${adjacentWork}</ul>
+      </section>
+    </div>
+  `;
+}
+
 function renderTechPanel(state) {
   return `
     <section class="tech-panel">
@@ -639,7 +767,7 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
           state.eventLog.push('有流民经过，但无处安置。');
         }
       } else {
-        state.eventLog.push(`第${second}秒：${getDisasterAtmosphere(state.mapType, state.era)}`);
+        state.eventLog.push(`第${second}秒：${getEventLogText(state, second)}`);
       }
     }
   });
@@ -944,6 +1072,14 @@ function getWorkRule(state, terrain) {
   return baseRule;
 }
 
+function getWorkForTile(state, tileIndex) {
+  return state.assignedWorkers.find((work) => work.tileIndex === tileIndex) ?? null;
+}
+
+function isTileInWorkRange(state, tileIndex) {
+  return state.selectedCoreAdjacentTileIds.includes(tileIndex + 1);
+}
+
 function prepareGeneration(state, mapData) {
   const extraHouseholds = getLegacyBonus(state, 'extraHouseholds');
 
@@ -956,6 +1092,8 @@ function prepareGeneration(state, mapData) {
   state.selectedCoreIndex = null;
   state.selectedCorePointId = null;
   state.selectedCoreAdjacentTileIds = [];
+  state.selectedTileIndex = null;
+  state.openPointId = null;
   state.householdCapacity = 8;
   state.households = Math.min(state.householdCapacity, 4 + extraHouseholds);
   state.idleHouseholds = state.households;
@@ -976,6 +1114,7 @@ function prepareGeneration(state, mapData) {
   state.warehouseCount = 0;
   state.techs = createInitialTechState();
   state.eventLog = [];
+  state.lastEventText = null;
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
@@ -994,6 +1133,8 @@ function resetRunToStart(state) {
   state.selectedCoreIndex = null;
   state.selectedCorePointId = null;
   state.selectedCoreAdjacentTileIds = [];
+  state.selectedTileIndex = null;
+  state.openPointId = null;
   state.householdCapacity = 8;
   state.households = 4;
   state.idleHouseholds = 4;
@@ -1009,6 +1150,7 @@ function resetRunToStart(state) {
   state.pendingLegacyChoice = null;
   state.techs = createInitialTechState();
   state.eventLog = [];
+  state.lastEventText = null;
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
@@ -1027,7 +1169,11 @@ function renderIslandMap(state, options = {}) {
   const selected = Number.isInteger(state.selectedCoreIndex)
     ? state.coreCandidates[state.selectedCoreIndex]
     : null;
-  const highlightedTiles = new Set(selected?.tileIndexes ?? []);
+  const highlightedTiles = new Set(
+    options.showWorkStatus
+      ? state.selectedCoreAdjacentTileIds.map((tileId) => tileId - 1)
+      : selected?.tileIndexes ?? [],
+  );
   const classes = ['map-board', options.size === 'large' ? 'large-map' : 'mini-map'];
 
   return `
@@ -1037,8 +1183,13 @@ function renderIslandMap(state, options = {}) {
         options.size ?? 'mini',
         options.showIndexes ? index + 1 : '',
         highlightedTiles.has(index),
+        index,
+        options,
+        state,
       )).join('')}
       ${options.showCandidates ? renderMapCandidates(state) : ''}
+      ${options.showCorePoint ? renderCorePoint(state) : ''}
+      ${options.showAllPoints ? renderAllPoints(state) : ''}
     </div>
   `;
 }
@@ -1055,8 +1206,39 @@ function renderMapCandidates(state) {
   `).join('');
 }
 
-function renderTile(tile, size, label = '', isHighlighted = false) {
-  return `<div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">${label || TERRAIN_LABELS[tile.terrain]}</div>`;
+function renderCorePoint(state) {
+  const point = state.points.find((item) => item.id === state.selectedCorePointId);
+
+  if (!point) {
+    return '';
+  }
+
+  return `<button class="map-point core-point" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="核心聚落点">⌂</button>`;
+}
+
+function renderAllPoints(state) {
+  return state.points.filter((point) => point.id !== state.selectedCorePointId).map((point) => {
+    const isCore = point.id === state.selectedCorePointId;
+
+    return `<button class="map-point ${isCore ? 'is-core' : ''}" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="地图点"></button>`;
+  }).join('');
+}
+
+function renderTile(tile, size, label = '', isHighlighted = false, index = 0, options = {}, state = null) {
+  const work = state ? getWorkForTile(state, index) : null;
+  const rule = work && state ? getWorkRule(state, work.terrain) : null;
+  const progressText = work && rule ? `${formatNumber(work.progress)}/${rule.progressNeeded}` : '';
+  const title = work && rule
+    ? `${TERRAIN_LABELS[tile.terrain]}地块${tile.id}：${rule.name} ${work.workers}/3，${RESOURCE_LABELS[rule.resource]} +${rule.amount}`
+    : `${TERRAIN_LABELS[tile.terrain]}地块${tile.id}`;
+  const clickable = options.clickableTiles ? `data-main-tile="${index}"` : '';
+
+  return `
+    <button class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;" type="button" ${clickable} title="${title}">
+      <span>${label || TERRAIN_LABELS[tile.terrain]}</span>
+      ${options.showWorkStatus && work ? `<small>${rule.name} ${work.workers}/3<br>进度 ${progressText}</small>` : ''}
+    </button>
+  `;
 }
 
 function formatNumber(value) {

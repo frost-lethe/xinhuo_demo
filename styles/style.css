@@ -157,11 +157,27 @@ h2 {
 }
 
 .hex {
+  border: 0;
   display: grid;
   place-items: center;
   color: #102019;
   font-weight: 700;
   clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  cursor: pointer;
+  line-height: 1.25;
+  padding: 0;
+}
+
+.hex small {
+  display: block;
+  max-width: 86%;
+  margin-top: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #1f2a24;
+  background: rgb(255 255 255 / 0.76);
+  font-size: 0.68rem;
+  font-weight: 700;
 }
 
 .hex.mini {
@@ -196,6 +212,61 @@ h2 {
   filter: brightness(1.24) saturate(1.45) drop-shadow(0 0 14px rgb(255 210 95 / 0.95));
   box-shadow: 0 0 0 5px rgb(255 210 95 / 0.58), 0 0 28px rgb(255 210 95 / 0.95);
   z-index: 3;
+}
+
+.hex.has-workers {
+  box-shadow: inset 0 0 0 4px rgb(255 255 255 / 0.45), 0 5px 14px rgb(31 42 36 / 0.2);
+}
+
+.main-map-panel,
+.object-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 18px 0;
+  padding: 16px;
+  background: #fffdf7;
+}
+
+.map-point {
+  position: absolute;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #46342c;
+  box-shadow: 0 1px 6px rgb(31 42 36 / 0.28);
+  cursor: pointer;
+}
+
+.map-point.is-core,
+.map-point.core-point {
+  width: 30px;
+  height: 30px;
+  color: #fff;
+  background: var(--accent);
+  font-weight: 800;
+}
+
+.point-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgb(31 42 36 / 0.44);
+}
+
+.point-modal {
+  width: min(70vw, 760px);
+  max-height: 76vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  background: var(--panel);
+  box-shadow: 0 20px 60px rgb(31 42 36 / 0.32);
 }
 
 .map-candidate {
