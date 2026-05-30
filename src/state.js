@@ -22,6 +22,7 @@ export function createInitialState() {
     selectedTileIndex: null,
     openPointId: null,
     openPanel: null,
+    panelScrollTop: 0,
     influenceLevel: 1,
     pointBuildings: {},
     households: INITIAL_HOUSEHOLDS,

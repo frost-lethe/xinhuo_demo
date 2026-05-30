@@ -41,6 +41,8 @@ export function createGameUI(root, state) {
   };
 
   const render = () => {
+    rememberPanelScroll(root, state);
+
     if (state.currentPage !== 'main') {
       stopTimer();
     }
@@ -225,7 +227,6 @@ function renderMainPage(root, state, render, startTimer) {
     <main class="app-shell game-layout main-hud-layout">
       <section class="panel main-stage-panel">
         ${renderMainMap(state, disasterEffects)}
-        ${renderSelectedTilePanel(state, disasterEffects)}
       </section>
       ${renderPanelModal(state, disasterEffects)}
     </main>
@@ -249,6 +250,8 @@ function renderMainPage(root, state, render, startTimer) {
     event.stopPropagation();
   });
 
+  restorePanelScroll(root, state);
+
   root.querySelectorAll('[data-assign]').forEach((button) => {
     button.addEventListener('click', () => {
       assignWorker(state, Number(button.dataset.assign));
@@ -266,13 +269,6 @@ function renderMainPage(root, state, render, startTimer) {
   root.querySelectorAll('[data-switch-job]').forEach((button) => {
     button.addEventListener('click', () => {
       switchWorkJob(state, Number(button.dataset.switchJob), button.dataset.targetJob);
-      render();
-    });
-  });
-
-  root.querySelectorAll('[data-main-tile]').forEach((tile) => {
-    tile.addEventListener('click', () => {
-      state.selectedTileIndex = Number(tile.dataset.mainTile);
       render();
     });
   });
@@ -445,6 +441,20 @@ function renderPanelModal(state, disasterEffects) {
       </section>
     </div>
   `;
+}
+
+function rememberPanelScroll(root, state) {
+  const modalBody = root.querySelector?.('.modal-body');
+  if (modalBody && state.openPanel) {
+    state.panelScrollTop = modalBody.scrollTop;
+  }
+}
+
+function restorePanelScroll(root, state) {
+  const modalBody = root.querySelector?.('.modal-body');
+  if (modalBody && Number.isFinite(state.panelScrollTop)) {
+    modalBody.scrollTop = state.panelScrollTop;
+  }
 }
 
 function renderSettlementPage(root, state, render) {
@@ -637,7 +647,6 @@ function renderMainMap(state, disasterEffects) {
         showCorePoint: true,
         showAllPoints: true,
         showWorkStatus: true,
-        clickableTiles: true,
         disasterEffects,
       })}
       ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
@@ -646,31 +655,7 @@ function renderMainMap(state, disasterEffects) {
 }
 
 function renderSelectedTilePanel(state, disasterEffects) {
-  if (!Number.isInteger(state.selectedTileIndex)) {
-    return '';
-  }
-
-  const tile = state.tiles[state.selectedTileIndex];
-  const work = getWorkForTile(state, state.selectedTileIndex);
-  const inRange = isTileInWorkRange(state, state.selectedTileIndex);
-  const rule = work ? getWorkRule(state, work) : getWorkRule(state, { terrain: tile.terrain });
-  const efficiency = getWorkEfficiencyMultiplier(disasterEffects, tile.terrain);
-  const effectText = efficiency < 1
-    ? `本纪灾害影响：效率 ${formatNumber(efficiency * 100)}%。`
-    : '本纪未受到工作效率灾害影响。';
-
-  return `
-    <section class="object-panel">
-      <h2>${TERRAIN_LABELS[tile.terrain]}地块 ${tile.id}</h2>
-      <p>是否在当前文明工作范围内：${inRange ? '是' : '否'}</p>
-      <p>当前工作：${rule.name}</p>
-      <p>工人：${work?.workers ?? 0} / 3</p>
-      <p>进度：${formatNumber(work?.progress ?? 0)} / ${rule.progressNeeded}</p>
-      <p>预计产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
-      <p>${effectText}</p>
-      ${work ? renderJobSwitchControl(state, work, state.assignedWorkers.indexOf(work)) : ''}
-    </section>
-  `;
+  return '';
 }
 
 function renderPointModal(state, disasterEffects) {
@@ -1573,6 +1558,7 @@ function prepareGeneration(state, mapData) {
   state.selectedTileIndex = null;
   state.openPointId = null;
   state.openPanel = null;
+  state.panelScrollTop = 0;
   state.influenceLevel = 1;
   state.pointBuildings = {};
   state.householdCapacity = 8;
@@ -1624,6 +1610,7 @@ function resetRunToStart(state) {
   state.selectedTileIndex = null;
   state.openPointId = null;
   state.openPanel = null;
+  state.panelScrollTop = 0;
   state.influenceLevel = 1;
   state.pointBuildings = {};
   state.householdCapacity = 8;
@@ -1666,7 +1653,7 @@ function renderIslandMap(state, options = {}) {
     : null;
   const highlightedTiles = new Set(
     options.showWorkStatus
-      ? state.selectedCoreAdjacentTileIds.map((tileId) => tileId - 1)
+      ? []
       : selected?.tileIndexes ?? [],
   );
   const classes = ['map-board', options.size === 'large' ? 'large-map' : 'mini-map'];
@@ -1726,16 +1713,16 @@ function renderTile(tile, size, label = '', isHighlighted = false, index = 0, op
   const work = state ? getWorkForTile(state, index) : null;
   const rule = work && state ? getWorkRule(state, work) : null;
   const progressText = work && rule ? `${formatNumber(work.progress)}/${rule.progressNeeded}` : '';
-  const title = work && rule
-    ? `${TERRAIN_LABELS[tile.terrain]}地块${tile.id}：${rule.name} ${work.workers}/3，${RESOURCE_LABELS[rule.resource]} +${rule.amount}`
-    : `${TERRAIN_LABELS[tile.terrain]}地块${tile.id}`;
-  const clickable = options.clickableTiles ? `data-main-tile="${index}"` : '';
+  const progressPercent = work && rule
+    ? Math.min(100, Math.max(0, (work.progress / rule.progressNeeded) * 100))
+    : 0;
 
   return `
-    <button class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;" type="button" ${clickable} title="${title}">
+    <div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">
+      ${options.showWorkStatus ? `<span class="tile-progress-ring" style="--progress: ${progressPercent}%;"></span>` : ''}
       <span>${label || TERRAIN_LABELS[tile.terrain]}</span>
       ${options.showWorkStatus && work ? `<small>${rule.name} ${work.workers}/3<br>进度 ${progressText}</small>` : ''}
-    </button>
+    </div>
   `;
 }
 
