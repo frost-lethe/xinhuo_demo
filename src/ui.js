@@ -14,7 +14,14 @@ import {
   getMapDisasterProfile,
   getWorkEfficiencyMultiplier,
 } from './disasters.js';
+import { getLegacyBonus, LEGACY_OPTIONS } from './legacy.js';
 import { countTerrains, generateMap } from './map.js';
+import {
+  createInitialTechState,
+  getResearchedTechNames,
+  isTechUnlocked,
+  TECH_DEFINITIONS,
+} from './tech.js';
 
 export function createGameUI(root, state) {
   if (!root) {
@@ -57,7 +64,12 @@ export function createGameUI(root, state) {
     }
 
     if (state.currentPage === 'lost') {
-      renderPlaceholderPage(root, '文明灭亡（占位）', '这一世文明已经熄灭，后续会接入遗产选择。');
+      renderLostPage(root, state, render);
+      return;
+    }
+
+    if (state.currentPage === 'legacy') {
+      renderLegacyPage(root, state, render);
       return;
     }
 
@@ -104,15 +116,7 @@ function renderStartPage(root, state, render) {
 
   root.querySelector('[data-action="start"]').addEventListener('click', () => {
     const mapData = generateMap();
-    state.currentPage = 'map';
-    state.mapType = mapData.mapType;
-    state.tiles = mapData.tiles;
-    state.points = mapData.points;
-    state.coreCandidates = mapData.coreCandidates;
-    state.selectedCoreIndex = null;
-    state.selectedCorePointId = null;
-    state.selectedCoreAdjacentTileIds = [];
-    state.assignedWorkers = [];
+    prepareGeneration(state, mapData);
     render();
   });
 }
@@ -234,14 +238,16 @@ function renderMainPage(root, state, render, startTimer) {
           <strong>${disasterEffects.warning}</strong>
         </div>
         <div class="work-list">
-          ${state.assignedWorkers.map((work, index) => renderWorkCard(work, index, state.isRunning, disasterEffects)).join('')}
+          ${state.assignedWorkers.map((work, index) => renderWorkCard(state, work, index, state.isRunning, disasterEffects)).join('')}
         </div>
         <div class="controls">
           <button class="primary-action" type="button" data-action="start-era" ${state.isRunning ? 'disabled' : ''}>开始本纪</button>
           <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
           <button type="button" data-speed="1" class="${state.speed === 1 ? 'is-selected' : ''}">1x</button>
           <button type="button" data-speed="2" class="${state.speed === 2 ? 'is-selected' : ''}">2x</button>
+          <button type="button" data-speed="5" class="${state.speed === 5 ? 'is-selected' : ''}">5x</button>
         </div>
+        ${renderTechPanel(state)}
       </section>
       <aside class="panel event-panel">
         <h2>事件 / 预警</h2>
@@ -260,6 +266,20 @@ function renderMainPage(root, state, render, startTimer) {
   root.querySelectorAll('[data-unassign]').forEach((button) => {
     button.addEventListener('click', () => {
       unassignWorker(state, Number(button.dataset.unassign));
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-tech-assign]').forEach((button) => {
+    button.addEventListener('click', () => {
+      assignResearchWorker(state, button.dataset.techAssign);
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-tech-unassign]').forEach((button) => {
+    button.addEventListener('click', () => {
+      unassignResearchWorker(state, button.dataset.techUnassign);
       render();
     });
   });
@@ -343,8 +363,107 @@ function renderPlaceholderPage(root, title, body) {
   `;
 }
 
-function renderWorkCard(work, index, isRunning, disasterEffects) {
-  const rule = WORK_RULES[work.terrain];
+function renderLostPage(root, state, render) {
+  const researchedTechs = getResearchedTechNames(state);
+
+  root.innerHTML = `
+    <main class="app-shell">
+      <section class="panel">
+        <p class="eyebrow">文明灭亡</p>
+        <h1>第 ${state.generation} 世文明灭亡</h1>
+        <div class="stat-grid">
+          <div>终止于第 ${state.era} 纪</div>
+          <div>本世损失户数 ${state.currentCivilizationDeaths}</div>
+          <div>所有世累计损失 ${state.totalDeathsAllCivilizations}</div>
+          <div>本世最高户数 ${state.highestHouseholdsThisCivilization}</div>
+          <div>本世已研究科技 ${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
+          <div>可留下文明遗产 1 点</div>
+        </div>
+        <button class="primary-action" type="button" data-action="choose-legacy">选择文明遗产</button>
+      </section>
+    </main>
+  `;
+
+  root.querySelector('[data-action="choose-legacy"]').addEventListener('click', () => {
+    state.pendingLegacyChoice = null;
+    state.currentPage = 'legacy';
+    render();
+  });
+}
+
+function renderLegacyPage(root, state, render) {
+  const selected = LEGACY_OPTIONS.find((option) => option.id === state.pendingLegacyChoice);
+
+  root.innerHTML = `
+    <main class="app-shell">
+      <section class="panel">
+        <p class="eyebrow">文明遗产</p>
+        <h1>选择传给下一世的薪火</h1>
+        <p>当前可用遗产点：1</p>
+        <div class="legacy-options">
+          ${LEGACY_OPTIONS.map((option) => `
+            <button class="legacy-option ${state.pendingLegacyChoice === option.id ? 'is-selected' : ''}" type="button" data-legacy="${option.id}">
+              <strong>${option.name}</strong>
+              <span>${option.description}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="notice">
+          ${selected ? `<p>${selected.description}</p>` : '<p>请选择一个遗产选项。</p>'}
+        </div>
+        <button class="primary-action" type="button" data-action="confirm-legacy" ${selected ? '' : 'disabled'}>确认遗产，开始下一世</button>
+      </section>
+    </main>
+  `;
+
+  root.querySelectorAll('[data-legacy]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.pendingLegacyChoice = button.dataset.legacy;
+      render();
+    });
+  });
+
+  root.querySelector('[data-action="confirm-legacy"]').addEventListener('click', () => {
+    const choice = LEGACY_OPTIONS.find((option) => option.id === state.pendingLegacyChoice);
+    state.activeLegacyBonus = choice;
+    state.generation += 1;
+    prepareGeneration(state, generateMap());
+    render();
+  });
+}
+
+function renderTechPanel(state) {
+  return `
+    <section class="tech-panel">
+      <h2>技术研究</h2>
+      <div class="tech-list">
+        ${Object.entries(TECH_DEFINITIONS).map(([techId, definition]) => renderTechCard(state, techId, definition)).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderTechCard(state, techId, definition) {
+  const tech = state.techs[techId];
+  const canEdit = !state.isRunning && !tech.unlocked;
+
+  return `
+    <article class="tech-card">
+      <h3>${definition.name}</h3>
+      <p>${definition.description}</p>
+      <p>研究进度：${formatNumber(tech.progress)} / ${definition.requirement}</p>
+      <p>研究户数：${tech.workers} / 3</p>
+      <div class="worker-buttons">
+        <button type="button" data-tech-unassign="${techId}" ${!canEdit || tech.workers <= 0 ? 'disabled' : ''}>-</button>
+        <button type="button" data-tech-assign="${techId}" ${!canEdit || tech.workers >= 3 || state.idleHouseholds <= 0 ? 'disabled' : ''}>+</button>
+      </div>
+      ${tech.unlocked ? '<p class="safe-site-note">已解锁</p>' : ''}
+    </article>
+  `;
+}
+
+function renderWorkCard(state, work, index, isRunning, disasterEffects) {
+  const rule = getWorkRule(state, work.terrain);
   const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
   const seconds = work.workers > 0
     ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
@@ -370,7 +489,7 @@ function renderWorkCard(work, index, isRunning, disasterEffects) {
 
 function renderSettlementAction(state) {
   if (state.households <= 0) {
-    return '<button class="primary-action" type="button" data-action="lost">文明灭亡（占位）</button>';
+    return '<button class="primary-action" type="button" data-action="lost">查看文明灭亡</button>';
   }
 
   if (state.era >= MAX_ERA) {
@@ -387,6 +506,7 @@ function advanceEra(state, deltaSeconds) {
   const currentElapsed = ERA_SECONDS - state.timeLeft;
 
   produceResources(state, adjustedDelta);
+  advanceResearch(state, adjustedDelta);
   triggerTimedEvents(state, previousElapsed, currentElapsed);
 
   if (state.timeLeft <= 0) {
@@ -405,7 +525,7 @@ function produceResources(state, deltaSeconds) {
       return;
     }
 
-    const rule = WORK_RULES[work.terrain];
+    const rule = getWorkRule(state, work.terrain);
     work.progress += work.workers * deltaSeconds * getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
 
     while (work.progress >= rule.progressNeeded) {
@@ -428,6 +548,10 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
         if (state.households < state.householdCapacity) {
           state.households += 1;
           state.idleHouseholds += 1;
+          state.highestHouseholdsThisCivilization = Math.max(
+            state.highestHouseholdsThisCivilization,
+            state.households,
+          );
           state.eventLog.push('一户流民加入了文明。');
         } else {
           state.eventLog.push('有流民经过，但无处安置。');
@@ -521,6 +645,10 @@ function createFuelSettlementLines(disasterEffects) {
     lines.push(`灾害额外需求：每户燃料需求 +${formatNumber(disasterEffects.extraFuelPerHousehold)}。`);
   }
 
+  disasterEffects.techNotes.forEach((note) => {
+    lines.push(note);
+  });
+
   return lines.length > 0 ? lines : ['本纪无额外燃料需求。'];
 }
 
@@ -601,6 +729,104 @@ function unassignWorker(state, index) {
 
   work.workers -= 1;
   state.idleHouseholds += 1;
+}
+
+function assignResearchWorker(state, techId) {
+  const tech = state.techs[techId];
+
+  if (!tech || tech.unlocked || state.isRunning || state.idleHouseholds <= 0 || tech.workers >= 3) {
+    return;
+  }
+
+  tech.workers += 1;
+  state.idleHouseholds -= 1;
+}
+
+function unassignResearchWorker(state, techId) {
+  const tech = state.techs[techId];
+
+  if (!tech || state.isRunning || tech.workers <= 0) {
+    return;
+  }
+
+  tech.workers -= 1;
+  state.idleHouseholds += 1;
+}
+
+function advanceResearch(state, deltaSeconds) {
+  Object.entries(state.techs).forEach(([techId, tech]) => {
+    if (tech.unlocked || tech.workers <= 0) {
+      return;
+    }
+
+    const definition = TECH_DEFINITIONS[techId];
+    tech.progress = Math.min(definition.requirement, tech.progress + tech.workers * deltaSeconds);
+
+    if (tech.progress >= definition.requirement) {
+      tech.unlocked = true;
+      state.idleHouseholds += tech.workers;
+      tech.workers = 0;
+      state.eventLog.push(`${definition.name}研究完成。`);
+    }
+  });
+}
+
+function getWorkRule(state, terrain) {
+  const baseRule = WORK_RULES[terrain];
+
+  if (terrain === TERRAIN.FOREST && isTechUnlocked(state, 'ember')) {
+    return {
+      ...baseRule,
+      name: '烧炭',
+      amount: 5,
+    };
+  }
+
+  if (terrain === TERRAIN.MOUNTAIN && isTechUnlocked(state, 'stone')) {
+    return {
+      ...baseRule,
+      amount: baseRule.amount + 1,
+    };
+  }
+
+  return baseRule;
+}
+
+function prepareGeneration(state, mapData) {
+  const extraHouseholds = getLegacyBonus(state, 'extraHouseholds');
+
+  state.currentPage = 'map';
+  state.era = 1;
+  state.mapType = mapData.mapType;
+  state.tiles = mapData.tiles;
+  state.points = mapData.points;
+  state.coreCandidates = mapData.coreCandidates;
+  state.selectedCoreIndex = null;
+  state.selectedCorePointId = null;
+  state.selectedCoreAdjacentTileIds = [];
+  state.householdCapacity = 8;
+  state.households = Math.min(state.householdCapacity, 4 + extraHouseholds);
+  state.idleHouseholds = state.households;
+  state.assignedWorkers = [];
+  state.resources = {
+    food: 12,
+    fuel: 8 + getLegacyBonus(state, 'extraFuel'),
+    material: 0 + getLegacyBonus(state, 'extraMaterial'),
+  };
+  state.resourceCaps = {
+    food: 30,
+    fuel: 30,
+    material: 30,
+  };
+  state.currentCivilizationDeaths = 0;
+  state.highestHouseholdsThisCivilization = state.households;
+  state.techs = createInitialTechState();
+  state.eventLog = [];
+  state.isRunning = false;
+  state.timeLeft = ERA_SECONDS;
+  state.speed = 1;
+  state.settlementLines = [];
+  state.pendingLegacyChoice = null;
 }
 
 function renderIslandMap(state, options = {}) {

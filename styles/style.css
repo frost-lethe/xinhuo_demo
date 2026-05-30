@@ -261,6 +261,46 @@ button:disabled {
   margin: 18px 0;
 }
 
+.tech-panel {
+  margin-top: 22px;
+}
+
+.tech-list,
+.legacy-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.tech-card,
+.legacy-option {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffdf7;
+}
+
+.tech-card h3 {
+  margin: 0 0 8px;
+}
+
+.tech-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.legacy-option {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.legacy-option.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(182 70 47 / 0.18);
+}
+
 .work-card {
   border: 1px solid var(--border);
   border-radius: 8px;

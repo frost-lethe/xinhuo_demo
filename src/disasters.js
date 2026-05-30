@@ -1,4 +1,5 @@
 import { RESOURCE_LABELS, TERRAIN } from './constants.js';
+import { isTechUnlocked } from './tech.js';
 
 export const DISASTER_DESCRIPTIONS = Object.freeze({
   寒潮: '提高燃料压力。',
@@ -40,14 +41,26 @@ export function getEraDisasterEffects(mapType, era, state = null) {
     efficiencyNotes: [],
     fuelNotes: [],
     materialNotes: [],
+    techNotes: [],
     warning: '本纪灾害：无。',
   };
 
   applyMapDisaster(effects, mapType, era, state);
   applyEndgameDisorder(effects, era, state);
+  applyTechModifiers(effects, state);
   effects.warning = createWarning(effects);
 
   return effects;
+}
+
+function applyTechModifiers(effects, state) {
+  if (!state || !isTechUnlocked(state, 'ember') || effects.extraFuelPerHousehold <= 0) {
+    return;
+  }
+
+  effects.extraFuelPerHousehold *= 0.8;
+  effects.techNotes = ['火种已生效：额外燃料需求降低20%。'];
+  effects.notes.push('火种已生效：额外燃料需求降低20%。');
 }
 
 export function getWorkEfficiencyMultiplier(effects, terrain) {

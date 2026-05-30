@@ -5,6 +5,7 @@ import {
   INITIAL_HOUSEHOLD_CAPACITY,
   INITIAL_HOUSEHOLDS,
 } from './constants.js';
+import { createInitialTechState } from './tech.js';
 
 export function createInitialState() {
   return {
@@ -34,7 +35,10 @@ export function createInitialState() {
     },
     currentCivilizationDeaths: 0,
     totalDeathsAllCivilizations: 0,
+    highestHouseholdsThisCivilization: INITIAL_HOUSEHOLDS,
     activeLegacyBonus: null,
+    pendingLegacyChoice: null,
+    techs: createInitialTechState(),
     eventLog: [],
     isRunning: false,
     timeLeft: ERA_SECONDS,
