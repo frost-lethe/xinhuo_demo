@@ -138,8 +138,10 @@ function createMapGeometry() {
   const boardWidth = bounds.maxX - bounds.minX + BOARD_PADDING * 2;
   const boardHeight = bounds.maxY - bounds.minY + BOARD_PADDING * 2;
   const pointMap = new Map();
+  const tilePointIds = [];
 
-  rawTiles.forEach((tile) => {
+  rawTiles.forEach((tile, tileIndex) => {
+    tilePointIds[tileIndex] = [];
     tile.vertices.forEach((vertex) => {
       const normalized = normalizePoint(vertex, bounds, boardWidth, boardHeight);
       const key = `${Math.round(vertex.x * 1000)},${Math.round(vertex.y * 1000)}`;
@@ -154,16 +156,42 @@ function createMapGeometry() {
       }
 
       pointMap.get(key).adjacentTileIds.push(tile.id);
+      tilePointIds[tileIndex].push(key);
     });
   });
+
+  const adjacency = buildPointAdjacency(tilePointIds);
 
   return {
     tileCenters: rawTiles.map((tile) => normalizePoint(tile.center, bounds, boardWidth, boardHeight)),
     points: Array.from(pointMap.values()).map((point) => ({
       ...point,
       adjacentTileIds: point.adjacentTileIds.sort((a, b) => a - b),
+      neighborPointIds: Array.from(adjacency.get(point.id) ?? []),
     })),
   };
+}
+
+function buildPointAdjacency(tilePointIds) {
+  const adjacency = new Map();
+
+  tilePointIds.forEach((pointIds) => {
+    pointIds.forEach((pointId, index) => {
+      const nextPointId = pointIds[(index + 1) % pointIds.length];
+
+      if (!adjacency.has(pointId)) {
+        adjacency.set(pointId, new Set());
+      }
+      if (!adjacency.has(nextPointId)) {
+        adjacency.set(nextPointId, new Set());
+      }
+
+      adjacency.get(pointId).add(nextPointId);
+      adjacency.get(nextPointId).add(pointId);
+    });
+  });
+
+  return adjacency;
 }
 
 function axialToPixel(q, r) {

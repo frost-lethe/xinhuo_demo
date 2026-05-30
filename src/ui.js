@@ -208,12 +208,7 @@ function renderCorePage(root, state, render) {
     const candidate = state.coreCandidates[state.selectedCoreIndex];
     state.selectedCorePointId = candidate.id;
     state.selectedCoreAdjacentTileIds = [...candidate.adjacentTileIds];
-    state.assignedWorkers = candidate.tileIndexes.map((tileIndex) => ({
-      tileIndex,
-      terrain: state.tiles[tileIndex].terrain,
-      workers: 0,
-      progress: 0,
-    }));
+    refreshWorkTilesFromSettlements(state);
     state.currentPage = 'main';
     render();
   });
@@ -317,13 +312,18 @@ function renderMainPage(root, state, render, startTimer) {
     render();
   });
 
-  root.querySelector('[data-action="expand-settlement"]')?.addEventListener('click', () => {
-    expandSettlement(state);
+  root.querySelector('[data-action="upgrade-influence"]')?.addEventListener('click', () => {
+    upgradeInfluence(state);
     render();
   });
 
-  root.querySelector('[data-action="build-warehouse"]')?.addEventListener('click', () => {
-    buildWarehouse(state);
+  root.querySelector('[data-action="build-point-settlement"]')?.addEventListener('click', () => {
+    buildOrdinarySettlement(state, state.openPointId);
+    render();
+  });
+
+  root.querySelector('[data-action="build-point-warehouse"]')?.addEventListener('click', () => {
+    buildPointWarehouse(state, state.openPointId);
     render();
   });
 
@@ -420,7 +420,7 @@ function renderLostPage(root, state, render) {
           <div>所有世累计损失 ${state.totalDeathsAllCivilizations}</div>
           <div>本世最高户数 ${state.highestHouseholdsThisCivilization}</div>
           <div>本世已研究科技 ${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
-          <div>扩建聚落次数 ${state.settlementExpansionCount}</div>
+          <div>普通聚落数量 ${state.ordinarySettlementCount}</div>
           <div>仓库数量 ${state.warehouseCount}</div>
           <div>可留下文明遗产 1 点</div>
         </div>
@@ -495,7 +495,7 @@ function renderVictoryPage(root, state, render) {
           <div>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</div>
           <div>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</div>
           <div>已研究科技：${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
-          <div>扩建聚落次数：${state.settlementExpansionCount}</div>
+          <div>普通聚落数量：${state.ordinarySettlementCount}</div>
           <div>仓库数量：${state.warehouseCount}</div>
           <div>最终地图类型：${state.mapType}</div>
         </div>
@@ -567,8 +567,16 @@ function renderPointModal(state, disasterEffects) {
   const adjacentTypes = point.adjacentTileIds
     .map((tileId) => TERRAIN_LABELS[state.tiles[tileId - 1].terrain])
     .join('、');
-  const pointType = point.id === state.selectedCorePointId ? '核心聚落' : '空点';
-  const inRange = point.adjacentTileIds.some((tileId) => state.selectedCoreAdjacentTileIds.includes(tileId));
+  const pointType = getPointType(state, point.id);
+  const distance = getNearestSettlementDistance(point.id, state);
+  const inRange = isPointWithinInfluence(point.id, state);
+  const buildable = isPointBuildable(point.id, state);
+  const typeLabel = {
+    core: '核心聚落',
+    ordinarySettlement: '普通聚落',
+    warehouse: '仓库',
+    empty: '空点',
+  }[pointType];
   const adjacentWork = point.adjacentTileIds
     .map((tileId) => {
       const tileIndex = tileId - 1;
@@ -589,24 +597,56 @@ function renderPointModal(state, disasterEffects) {
     <div class="point-modal-backdrop" data-action="close-point-modal">
       <section class="point-modal" role="dialog" aria-modal="true" data-point-modal>
         <h2>地图点 ${point.id.slice(0, 6)}</h2>
-        <p>点类型：${pointType}</p>
+        <p>点类型：${typeLabel}</p>
         <p>相邻地块编号：${point.adjacentTileIds.join('、')}</p>
         <p>相邻地块类型：${adjacentTypes}</p>
-        <p>是否属于当前可工作范围：${inRange ? '是' : '否'}</p>
-        ${pointType === '核心聚落' ? `
+        <p>到最近聚落的距离：${distance === Infinity ? '不可达' : distance}</p>
+        <p>当前影响范围等级：${state.influenceLevel}</p>
+        <p>是否在影响范围内：${inRange ? '是' : '否'}</p>
+        <p>是否可建设：${buildable ? '是' : '否'}</p>
+        ${pointType === 'core' ? `
           <div class="notice">
             <p>核心聚落</p>
+            <p>影响范围来源：是</p>
             <p>户容量贡献：8</p>
             <p>基础资源上限贡献：食物30 / 燃料30 / 材料30</p>
             <p>相邻地块已纳入文明工作范围。</p>
           </div>
-        ` : `
+        ` : ''}
+        ${pointType === 'ordinarySettlement' ? `
+          <div class="notice">
+            <p>普通聚落</p>
+            <p>影响范围来源：是</p>
+            <p>户容量贡献：6</p>
+            <p>资源上限贡献：食物20 / 燃料20 / 材料20</p>
+            <p>相邻地块已纳入工作范围。</p>
+          </div>
+        ` : ''}
+        ${pointType === 'warehouse' ? `
+          <div class="notice">
+            <p>仓库</p>
+            <p>影响范围来源：否</p>
+            <p>资源上限贡献：食物20 / 燃料20 / 材料20</p>
+            <p>库存灾害损失减免：5%</p>
+            <p>仓库不解锁相邻地块工作。</p>
+          </div>
+        ` : ''}
+        ${pointType === 'empty' ? `
           <div class="notice">
             <p>当前为空点。</p>
-            <p>未来版本可在此建设普通聚落或仓库。</p>
-            <p>建设需要文明影响范围或开拓能力，本轮暂未实装。</p>
+            ${inRange ? '<p>该点位于文明影响范围内，可以作为建设候选。</p>' : `
+              <p>该点超出文明影响范围。</p>
+              <p>当前影响范围：${state.influenceLevel}。</p>
+              <p>到最近聚落距离：${distance === Infinity ? '不可达' : distance}。</p>
+              <p>请先升级影响范围，或在更近的位置建立普通聚落。</p>
+            `}
+            ${state.isRunning ? '<p>运行中不可建造，请暂停或等待本纪结束。</p>' : ''}
+            <div class="controls">
+              <button type="button" data-action="build-point-settlement" ${!buildable || !canAfford(state, { food: 6, fuel: 8, material: 12 }) ? 'disabled' : ''}>建造普通聚落</button>
+              <button type="button" data-action="build-point-warehouse" ${!buildable || !canAfford(state, { food: 3, fuel: 5, material: 12 }) ? 'disabled' : ''}>建造仓库</button>
+            </div>
           </div>
-        `}
+        ` : ''}
         <h3>相邻地块工作情况</h3>
         <ul>${adjacentWork}</ul>
       </section>
@@ -628,6 +668,7 @@ function renderTechPanel(state) {
 function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
   const warehouseReduction = state.warehouseCount * 5;
+  const nextInfluenceCost = getInfluenceUpgradeCost(state.influenceLevel + 1);
   const growText = state.households >= state.householdCapacity
     ? '容量已满，需要扩建聚落。'
     : state.resources.food < 4
@@ -639,18 +680,29 @@ function renderSettlementDevelopmentPanel(state) {
       <h2>聚落发展</h2>
       <div class="stat-grid">
         <div>核心聚落 1</div>
-        <div>扩建次数 ${state.settlementExpansionCount}</div>
+        <div>影响范围等级 ${state.influenceLevel} / 4</div>
+        <div>可建设距离 聚落周围 ${state.influenceLevel} 格点</div>
+        <div>普通聚落数量 ${state.ordinarySettlementCount}</div>
         <div>仓库数量 ${state.warehouseCount}</div>
+        <div>当前可建设点 ${getBuildablePoints(state).length}</div>
         <div>建筑数 ${getBuildingCount(state)}</div>
         <div>户容量 ${state.householdCapacity}</div>
         <div>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
         <div>库存灾害减免 ${warehouseReduction}%</div>
       </div>
+      <p>${state.influenceLevel >= 4 ? '已达到最高影响范围。' : `下一级升级成本：燃料${nextInfluenceCost.fuel} / 材料${nextInfluenceCost.material}。`}</p>
+      <p>普通聚落和仓库现在需要点击地图上的可建设顶点建造。</p>
+      <div class="map-legend">
+        <span><b class="legend-dot core"></b>红：核心聚落</span>
+        <span><b class="legend-dot settlement"></b>橙：普通聚落</span>
+        <span><b class="legend-dot warehouse"></b>黄：仓库</span>
+        <span><b class="legend-dot buildable"></b>绿：可建设点</span>
+        <span><b class="legend-dot muted"></b>灰：超出影响范围</span>
+      </div>
       <p>${growText}</p>
       <div class="controls">
         <button type="button" data-action="grow-household" ${!canAct || state.households >= state.householdCapacity || state.resources.food < 4 ? 'disabled' : ''}>增户</button>
-        <button type="button" data-action="expand-settlement" ${!canAct || !canAfford(state, { food: 5, fuel: 5, material: 10 }) ? 'disabled' : ''}>扩建聚落</button>
-        <button type="button" data-action="build-warehouse" ${!canAct || !canAfford(state, { food: 3, fuel: 5, material: 12 }) ? 'disabled' : ''}>建造仓库</button>
+        <button type="button" data-action="upgrade-influence" ${!canAct || state.influenceLevel >= 4 || !canAfford(state, nextInfluenceCost) ? 'disabled' : ''}>升级影响范围</button>
       </div>
     </section>
   `;
@@ -1019,6 +1071,70 @@ function buildWarehouse(state) {
   state.resourceCaps.material += 20;
 }
 
+function upgradeInfluence(state) {
+  const nextLevel = state.influenceLevel + 1;
+  const cost = getInfluenceUpgradeCost(nextLevel);
+
+  if (!canAdjust(state) || state.influenceLevel >= 4 || !canAfford(state, cost)) {
+    return;
+  }
+
+  if (!window.confirm(`升级文明影响范围将消耗 燃料${cost.fuel}、材料${cost.material}。升级后可在距离聚落 ${nextLevel} 格内建设。是否确认？`)) {
+    return;
+  }
+
+  payCost(state, cost);
+  state.influenceLevel = nextLevel;
+}
+
+function buildOrdinarySettlement(state, pointId) {
+  const cost = { food: 6, fuel: 8, material: 12 };
+
+  if (!pointId || !canAdjust(state) || !isPointBuildable(pointId, state) || !canAfford(state, cost)) {
+    return;
+  }
+
+  if (!window.confirm('建造普通聚落将消耗 食物6、燃料8、材料12。效果：户容量+6，三资源上限+20，并解锁相邻地块工作。是否确认？')) {
+    return;
+  }
+
+  payCost(state, cost);
+  state.pointBuildings[pointId] = 'ordinarySettlement';
+  state.ordinarySettlementCount += 1;
+  state.householdCapacity += 6;
+  state.resourceCaps.food += 20;
+  state.resourceCaps.fuel += 20;
+  state.resourceCaps.material += 20;
+  refreshWorkTilesFromSettlements(state);
+}
+
+function buildPointWarehouse(state, pointId) {
+  const cost = { food: 3, fuel: 5, material: 12 };
+
+  if (!pointId || !canAdjust(state) || !isPointBuildable(pointId, state) || !canAfford(state, cost)) {
+    return;
+  }
+
+  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少灾害库存损失5%。仓库不会扩展影响范围。是否确认？')) {
+    return;
+  }
+
+  payCost(state, cost);
+  state.pointBuildings[pointId] = 'warehouse';
+  state.warehouseCount += 1;
+  state.resourceCaps.food += 20;
+  state.resourceCaps.fuel += 20;
+  state.resourceCaps.material += 20;
+}
+
+function getInfluenceUpgradeCost(level) {
+  return {
+    2: { fuel: 6, material: 10 },
+    3: { fuel: 10, material: 18 },
+    4: { fuel: 16, material: 28 },
+  }[level] ?? { fuel: 0, material: 0 };
+}
+
 function canAfford(state, cost) {
   return Object.entries(cost).every(([resource, amount]) => state.resources[resource] >= amount);
 }
@@ -1080,6 +1196,100 @@ function isTileInWorkRange(state, tileIndex) {
   return state.selectedCoreAdjacentTileIds.includes(tileIndex + 1);
 }
 
+function getPointType(state, pointId) {
+  if (pointId === state.selectedCorePointId) {
+    return 'core';
+  }
+
+  return state.pointBuildings[pointId] ?? 'empty';
+}
+
+function getSettlementSourcePointIds(state) {
+  return [
+    state.selectedCorePointId,
+    ...Object.entries(state.pointBuildings)
+      .filter(([, type]) => type === 'ordinarySettlement')
+      .map(([pointId]) => pointId),
+  ].filter(Boolean);
+}
+
+function getNearestSettlementDistance(pointId, state) {
+  const sources = getSettlementSourcePointIds(state);
+
+  if (sources.includes(pointId)) {
+    return 0;
+  }
+
+  const visited = new Set(sources);
+  const queue = sources.map((sourceId) => ({ pointId: sourceId, distance: 0 }));
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const point = state.points.find((item) => item.id === current.pointId);
+
+    if (!point) {
+      continue;
+    }
+
+    for (const neighborId of point.neighborPointIds ?? []) {
+      if (visited.has(neighborId)) {
+        continue;
+      }
+
+      const distance = current.distance + 1;
+      if (neighborId === pointId) {
+        return distance;
+      }
+
+      visited.add(neighborId);
+      queue.push({ pointId: neighborId, distance });
+    }
+  }
+
+  return Infinity;
+}
+
+function isPointWithinInfluence(pointId, state) {
+  return getNearestSettlementDistance(pointId, state) <= state.influenceLevel;
+}
+
+function isPointBuildable(pointId, state) {
+  return canAdjust(state)
+    && getPointType(state, pointId) === 'empty'
+    && isPointWithinInfluence(pointId, state);
+}
+
+function getBuildablePoints(state) {
+  return state.points.filter((point) => isPointBuildable(point.id, state));
+}
+
+function refreshWorkTilesFromSettlements(state) {
+  const tileIds = new Set();
+
+  getSettlementSourcePointIds(state).forEach((pointId) => {
+    const point = state.points.find((item) => item.id === pointId);
+    point?.adjacentTileIds.forEach((tileId) => tileIds.add(tileId));
+  });
+
+  state.selectedCoreAdjacentTileIds = Array.from(tileIds).sort((a, b) => a - b);
+  const existingByTile = new Map(state.assignedWorkers.map((work) => [work.tileIndex, work]));
+  state.assignedWorkers = state.selectedCoreAdjacentTileIds.map((tileId) => {
+    const tileIndex = tileId - 1;
+    const existing = existingByTile.get(tileIndex);
+
+    if (existing) {
+      return existing;
+    }
+
+    return {
+      tileIndex,
+      terrain: state.tiles[tileIndex].terrain,
+      workers: 0,
+      progress: 0,
+    };
+  });
+}
+
 function prepareGeneration(state, mapData) {
   const extraHouseholds = getLegacyBonus(state, 'extraHouseholds');
 
@@ -1094,6 +1304,8 @@ function prepareGeneration(state, mapData) {
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
   state.openPointId = null;
+  state.influenceLevel = 1;
+  state.pointBuildings = {};
   state.householdCapacity = 8;
   state.households = Math.min(state.householdCapacity, 4 + extraHouseholds);
   state.idleHouseholds = state.households;
@@ -1111,6 +1323,7 @@ function prepareGeneration(state, mapData) {
   state.currentCivilizationDeaths = 0;
   state.highestHouseholdsThisCivilization = state.households;
   state.settlementExpansionCount = 0;
+  state.ordinarySettlementCount = 0;
   state.warehouseCount = 0;
   state.techs = createInitialTechState();
   state.eventLog = [];
@@ -1135,6 +1348,8 @@ function resetRunToStart(state) {
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
   state.openPointId = null;
+  state.influenceLevel = 1;
+  state.pointBuildings = {};
   state.householdCapacity = 8;
   state.households = 4;
   state.idleHouseholds = 4;
@@ -1145,6 +1360,7 @@ function resetRunToStart(state) {
   state.totalDeathsAllCivilizations = 0;
   state.highestHouseholdsThisCivilization = 4;
   state.settlementExpansionCount = 0;
+  state.ordinarySettlementCount = 0;
   state.warehouseCount = 0;
   state.activeLegacyBonus = null;
   state.pendingLegacyChoice = null;
@@ -1213,14 +1429,17 @@ function renderCorePoint(state) {
     return '';
   }
 
-  return `<button class="map-point core-point" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="核心聚落点">⌂</button>`;
+  return `<button class="map-point core-point ${state.openPointId === point.id ? 'is-selected' : ''}" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="核心聚落点">⌂</button>`;
 }
 
 function renderAllPoints(state) {
   return state.points.filter((point) => point.id !== state.selectedCorePointId).map((point) => {
-    const isCore = point.id === state.selectedCorePointId;
+    const type = getPointType(state, point.id);
+    const inInfluence = isPointWithinInfluence(point.id, state);
+    const buildable = type === 'empty' && inInfluence;
+    const selected = state.openPointId === point.id;
 
-    return `<button class="map-point ${isCore ? 'is-core' : ''}" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="地图点"></button>`;
+    return `<button class="map-point ${type} ${buildable ? 'buildable' : ''} ${selected ? 'is-selected' : ''} ${!inInfluence && type === 'empty' ? 'out-of-range' : ''}" style="left: ${point.x}%; top: ${point.y}%;" type="button" data-main-point="${point.id}" aria-label="地图点"></button>`;
   }).join('');
 }
 
