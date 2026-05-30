@@ -281,13 +281,29 @@ function renderMainPage(root, state, render, startTimer) {
     });
   });
 
-  root.querySelector('[data-action="close-point-modal"]')?.addEventListener('click', () => {
-    state.openPointId = null;
-    render();
+  root.querySelector('[data-point-modal-backdrop]')?.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    if (event.target.closest('[data-close-point-modal]')) {
+      closePointModal(state, render);
+      return;
+    }
+
+    if (!event.target.closest('[data-point-modal-panel]')) {
+      closePointModal(state, render);
+    }
   });
 
-  root.querySelector('[data-point-modal]')?.addEventListener('click', (event) => {
+  root.querySelector('[data-point-modal-panel]')?.addEventListener('click', (event) => {
     event.stopPropagation();
+  });
+
+  root.querySelectorAll('[data-close-point-modal]').forEach((button) => {
+    button.addEventListener('click', () => {
+      closePointModal(state, render);
+    });
   });
 
   root.querySelectorAll('[data-tech-assign]').forEach((button) => {
@@ -347,6 +363,26 @@ function renderMainPage(root, state, render, startTimer) {
       render();
     });
   });
+
+  document.onkeydown = (event) => {
+    if (event.key === 'Escape' && state.openPointId) {
+      closePointModal(state, render);
+    }
+  };
+}
+
+function closePointModal(state, render) {
+  state.openPointId = null;
+  if ('selectedPointId' in state) {
+    state.selectedPointId = null;
+  }
+  if ('activePointId' in state) {
+    state.activePointId = null;
+  }
+  if (state.openModal === 'point') {
+    state.openModal = null;
+  }
+  render();
 }
 
 function renderTopHud(state) {
@@ -697,8 +733,9 @@ function renderPointModal(state, disasterEffects) {
     .join('');
 
   return `
-    <div class="point-modal-backdrop" data-action="close-point-modal">
-      <section class="point-modal" role="dialog" aria-modal="true" data-point-modal>
+    <div class="point-modal-backdrop" data-point-modal-backdrop>
+      <section class="point-modal" role="dialog" aria-modal="true" data-point-modal data-point-modal-panel>
+        <button class="point-modal-close" type="button" data-close-point-modal aria-label="关闭点子页面">×</button>
         <h2>地图点 ${point.id.slice(0, 6)}</h2>
         <p>点类型：${typeLabel}</p>
         <p>相邻地块编号：${point.adjacentTileIds.join('、')}</p>
