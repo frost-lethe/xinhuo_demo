@@ -27,6 +27,48 @@ export const RESOURCE_LABELS = Object.freeze({
   material: '材料',
 });
 
+export const JOB_DEFINITIONS = Object.freeze({
+  gather: {
+    id: 'gather',
+    name: '采集',
+    terrain: TERRAIN.GRASSLAND,
+    resource: 'food',
+    amount: 3,
+    progressNeeded: 50,
+  },
+  logging: {
+    id: 'logging',
+    name: '伐木',
+    terrain: TERRAIN.FOREST,
+    resource: 'fuel',
+    amount: 3,
+    progressNeeded: 50,
+  },
+  charcoal: {
+    id: 'charcoal',
+    name: '烧炭',
+    terrain: TERRAIN.FOREST,
+    requiredTech: 'ember',
+    resource: 'fuel',
+    amount: 5,
+    progressNeeded: 50,
+  },
+  stone_gathering: {
+    id: 'stone_gathering',
+    name: '拾石',
+    terrain: TERRAIN.MOUNTAIN,
+    resource: 'material',
+    amount: 3,
+    progressNeeded: 50,
+  },
+});
+
+export const DEFAULT_JOBS = Object.freeze({
+  [TERRAIN.GRASSLAND]: 'gather',
+  [TERRAIN.FOREST]: 'logging',
+  [TERRAIN.MOUNTAIN]: 'stone_gathering',
+});
+
 export const WORK_RULES = Object.freeze({
   grassland: {
     name: '采集',

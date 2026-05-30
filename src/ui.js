@@ -1,11 +1,12 @@
 import {
+  DEFAULT_JOBS,
   ERA_SECONDS,
+  JOB_DEFINITIONS,
   MAP_TYPES,
   MAX_ERA,
   RESOURCE_LABELS,
   TERRAIN,
   TERRAIN_LABELS,
-  WORK_RULES,
 } from './constants.js';
 import {
   DISASTER_DESCRIPTIONS,
@@ -265,6 +266,13 @@ function renderMainPage(root, state, render, startTimer) {
   root.querySelectorAll('[data-unassign]').forEach((button) => {
     button.addEventListener('click', () => {
       unassignWorker(state, Number(button.dataset.unassign));
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-switch-job]').forEach((button) => {
+    button.addEventListener('click', () => {
+      switchWorkJob(state, Number(button.dataset.switchJob), button.dataset.targetJob);
       render();
     });
   });
@@ -538,7 +546,7 @@ function renderSelectedTilePanel(state, disasterEffects) {
   const tile = state.tiles[state.selectedTileIndex];
   const work = getWorkForTile(state, state.selectedTileIndex);
   const inRange = isTileInWorkRange(state, state.selectedTileIndex);
-  const rule = work ? getWorkRule(state, work.terrain) : WORK_RULES[tile.terrain];
+  const rule = work ? getWorkRule(state, work) : getWorkRule(state, { terrain: tile.terrain });
   const efficiency = getWorkEfficiencyMultiplier(disasterEffects, tile.terrain);
   const effectText = efficiency < 1
     ? `本纪灾害影响：效率 ${formatNumber(efficiency * 100)}%。`
@@ -553,6 +561,7 @@ function renderSelectedTilePanel(state, disasterEffects) {
       <p>进度：${formatNumber(work?.progress ?? 0)} / ${rule.progressNeeded}</p>
       <p>预计产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
       <p>${effectText}</p>
+      ${work ? renderJobSwitchControl(state, work, state.assignedWorkers.indexOf(work)) : ''}
     </section>
   `;
 }
@@ -582,7 +591,7 @@ function renderPointModal(state, disasterEffects) {
       const tileIndex = tileId - 1;
       const tile = state.tiles[tileIndex];
       const work = getWorkForTile(state, tileIndex);
-      const rule = work ? getWorkRule(state, work.terrain) : WORK_RULES[tile.terrain];
+      const rule = work ? getWorkRule(state, work) : getWorkRule(state, { terrain: tile.terrain });
 
       return `
         <li>
@@ -728,7 +737,7 @@ function renderTechCard(state, techId, definition) {
 }
 
 function renderWorkCard(state, work, index, isRunning, disasterEffects) {
-  const rule = getWorkRule(state, work.terrain);
+  const rule = getWorkRule(state, work);
   const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
   const seconds = work.workers > 0
     ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
@@ -748,7 +757,31 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
         <button type="button" data-unassign="${index}" ${work.workers <= 0 || isRunning ? 'disabled' : ''}>-</button>
         <button type="button" data-assign="${index}" ${work.workers >= 3 || isRunning ? 'disabled' : ''}>+</button>
       </div>
+      ${renderJobSwitchControl(state, work, index)}
     </article>
+  `;
+}
+
+function renderJobSwitchControl(state, work, index) {
+  if (work.terrain !== TERRAIN.FOREST) {
+    return '';
+  }
+
+  const emberUnlocked = isTechUnlocked(state, 'ember');
+  const currentJobId = normalizeWorkJob(state, work);
+  const targetJobId = currentJobId === 'charcoal' ? 'logging' : 'charcoal';
+  const targetRule = JOB_DEFINITIONS[targetJobId];
+
+  if (!emberUnlocked && targetJobId === 'charcoal') {
+    return '<p class="safe-site-note">烧炭：需要科技【火种】</p>';
+  }
+
+  return `
+    <div class="controls">
+      <button type="button" data-switch-job="${index}" data-target-job="${targetJobId}" ${!canAdjust(state) ? 'disabled' : ''}>
+        切换为${targetRule.name}
+      </button>
+    </div>
   `;
 }
 
@@ -790,7 +823,7 @@ function produceResources(state, deltaSeconds) {
       return;
     }
 
-    const rule = getWorkRule(state, work.terrain);
+    const rule = getWorkRule(state, work);
     work.progress += work.workers * deltaSeconds * getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
 
     while (work.progress >= rule.progressNeeded) {
@@ -1001,6 +1034,30 @@ function unassignWorker(state, index) {
   state.idleHouseholds += 1;
 }
 
+function switchWorkJob(state, index, targetJobId) {
+  const work = state.assignedWorkers[index];
+  const targetJob = JOB_DEFINITIONS[targetJobId];
+
+  if (!canAdjust(state) || !work || !targetJob || targetJob.terrain !== work.terrain) {
+    return;
+  }
+
+  normalizeWorkJob(state, work);
+
+  if (work.jobId === targetJobId || (targetJob.requiredTech && !isTechUnlocked(state, targetJob.requiredTech))) {
+    return;
+  }
+
+  if (!window.confirm('切换工作会清空该地块当前进度，并撤回该地块上的所有工人。是否确认？')) {
+    return;
+  }
+
+  state.idleHouseholds += work.workers;
+  work.workers = 0;
+  work.progress = 0;
+  work.jobId = targetJobId;
+}
+
 function assignResearchWorker(state, techId) {
   const tech = state.techs[techId];
 
@@ -1167,25 +1224,42 @@ function advanceResearch(state, deltaSeconds) {
   });
 }
 
-function getWorkRule(state, terrain) {
-  const baseRule = WORK_RULES[terrain];
+function getWorkRule(state, work) {
+  const terrain = typeof work === 'string' ? work : work?.terrain;
+  const jobId = normalizeWorkJob(state, typeof work === 'string' ? { terrain } : work);
+  const rule = JOB_DEFINITIONS[jobId] ?? JOB_DEFINITIONS[DEFAULT_JOBS[terrain]];
 
-  if (terrain === TERRAIN.FOREST && isTechUnlocked(state, 'ember')) {
+  if (rule.requiredTech && !isTechUnlocked(state, rule.requiredTech)) {
+    return JOB_DEFINITIONS[DEFAULT_JOBS[terrain]];
+  }
+
+  if (jobId === 'stone_gathering' && isTechUnlocked(state, 'stone')) {
     return {
-      ...baseRule,
-      name: '烧炭',
-      amount: 5,
+      ...rule,
+      amount: rule.amount + 1,
     };
   }
 
-  if (terrain === TERRAIN.MOUNTAIN && isTechUnlocked(state, 'stone')) {
-    return {
-      ...baseRule,
-      amount: baseRule.amount + 1,
-    };
+  return rule;
+}
+
+function normalizeWorkJob(state, work) {
+  const defaultJobId = DEFAULT_JOBS[work?.terrain];
+
+  if (!work) {
+    return defaultJobId;
   }
 
-  return baseRule;
+  const job = JOB_DEFINITIONS[work.jobId];
+  const shouldFallback = !job
+    || job.terrain !== work.terrain
+    || (job.requiredTech && !isTechUnlocked(state, job.requiredTech));
+
+  if (shouldFallback) {
+    work.jobId = defaultJobId;
+  }
+
+  return work.jobId;
 }
 
 function getWorkForTile(state, tileIndex) {
@@ -1278,6 +1352,7 @@ function refreshWorkTilesFromSettlements(state) {
     const existing = existingByTile.get(tileIndex);
 
     if (existing) {
+      normalizeWorkJob(state, existing);
       return existing;
     }
 
@@ -1286,6 +1361,7 @@ function refreshWorkTilesFromSettlements(state) {
       terrain: state.tiles[tileIndex].terrain,
       workers: 0,
       progress: 0,
+      jobId: DEFAULT_JOBS[state.tiles[tileIndex].terrain],
     };
   });
 }
@@ -1445,7 +1521,7 @@ function renderAllPoints(state) {
 
 function renderTile(tile, size, label = '', isHighlighted = false, index = 0, options = {}, state = null) {
   const work = state ? getWorkForTile(state, index) : null;
-  const rule = work && state ? getWorkRule(state, work.terrain) : null;
+  const rule = work && state ? getWorkRule(state, work) : null;
   const progressText = work && rule ? `${formatNumber(work.progress)}/${rule.progressNeeded}` : '';
   const title = work && rule
     ? `${TERRAIN_LABELS[tile.terrain]}地块${tile.id}：${rule.name} ${work.workers}/3，${RESOURCE_LABELS[rule.resource]} +${rule.amount}`

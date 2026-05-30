@@ -3,7 +3,7 @@ export const TECH_DEFINITIONS = Object.freeze({
     id: 'ember',
     name: '火种',
     requirement: 60,
-    description: '寒潮 / 严冬 / 终末失序造成的额外燃料需求 -20%，并解锁森林工作“烧炭”。',
+    description: '减轻寒潮 / 严冬 / 终末额外燃料需求 20%，并解锁森林工作【烧炭】。',
   },
   stone: {
     id: 'stone',
