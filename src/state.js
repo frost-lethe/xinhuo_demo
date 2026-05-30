@@ -36,6 +36,8 @@ export function createInitialState() {
     currentCivilizationDeaths: 0,
     totalDeathsAllCivilizations: 0,
     highestHouseholdsThisCivilization: INITIAL_HOUSEHOLDS,
+    settlementExpansionCount: 0,
+    warehouseCount: 0,
     activeLegacyBonus: null,
     pendingLegacyChoice: null,
     techs: createInitialTechState(),

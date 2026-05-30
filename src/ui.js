@@ -11,6 +11,7 @@ import {
   DISASTER_DESCRIPTIONS,
   getDisasterAtmosphere,
   getEraDisasterEffects,
+  getBuildingCount,
   getMapDisasterProfile,
   getWorkEfficiencyMultiplier,
 } from './disasters.js';
@@ -74,7 +75,7 @@ export function createGameUI(root, state) {
     }
 
     if (state.currentPage === 'won') {
-      renderPlaceholderPage(root, '胜利（占位）', '文明撑过了第十五纪，后续会接入完整胜利结算。');
+      renderVictoryPage(root, state, render);
       return;
     }
 
@@ -240,6 +241,7 @@ function renderMainPage(root, state, render, startTimer) {
         <div class="work-list">
           ${state.assignedWorkers.map((work, index) => renderWorkCard(state, work, index, state.isRunning, disasterEffects)).join('')}
         </div>
+        ${renderSettlementDevelopmentPanel(state)}
         <div class="controls">
           <button class="primary-action" type="button" data-action="start-era" ${state.isRunning ? 'disabled' : ''}>开始本纪</button>
           <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
@@ -282,6 +284,21 @@ function renderMainPage(root, state, render, startTimer) {
       unassignResearchWorker(state, button.dataset.techUnassign);
       render();
     });
+  });
+
+  root.querySelector('[data-action="grow-household"]')?.addEventListener('click', () => {
+    growHousehold(state);
+    render();
+  });
+
+  root.querySelector('[data-action="expand-settlement"]')?.addEventListener('click', () => {
+    expandSettlement(state);
+    render();
+  });
+
+  root.querySelector('[data-action="build-warehouse"]')?.addEventListener('click', () => {
+    buildWarehouse(state);
+    render();
   });
 
   root.querySelector('[data-action="start-era"]').addEventListener('click', () => {
@@ -377,6 +394,8 @@ function renderLostPage(root, state, render) {
           <div>所有世累计损失 ${state.totalDeathsAllCivilizations}</div>
           <div>本世最高户数 ${state.highestHouseholdsThisCivilization}</div>
           <div>本世已研究科技 ${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
+          <div>扩建聚落次数 ${state.settlementExpansionCount}</div>
+          <div>仓库数量 ${state.warehouseCount}</div>
           <div>可留下文明遗产 1 点</div>
         </div>
         <button class="primary-action" type="button" data-action="choose-legacy">选择文明遗产</button>
@@ -432,12 +451,78 @@ function renderLegacyPage(root, state, render) {
   });
 }
 
+function renderVictoryPage(root, state, render) {
+  const researchedTechs = getResearchedTechNames(state);
+
+  root.innerHTML = `
+    <main class="app-shell">
+      <section class="panel">
+        <p class="eyebrow">通关结算</p>
+        <h1>文明撑过了第十五纪</h1>
+        <div class="stat-grid">
+          <div>通关世数：第 ${state.generation} 世</div>
+          <div>所有世累计损失户数：${state.totalDeathsAllCivilizations}</div>
+          <div>当前世损失户数：${state.currentCivilizationDeaths}</div>
+          <div>最终户数：${state.households}</div>
+          <div>当前世最高户数：${state.highestHouseholdsThisCivilization}</div>
+          <div>食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}</div>
+          <div>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</div>
+          <div>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</div>
+          <div>已研究科技：${researchedTechs.length > 0 ? researchedTechs.join('、') : '无'}</div>
+          <div>扩建聚落次数：${state.settlementExpansionCount}</div>
+          <div>仓库数量：${state.warehouseCount}</div>
+          <div>最终地图类型：${state.mapType}</div>
+        </div>
+        <p>第十五纪之后，世界仍未恢复秩序，但这一支文明已经把薪火带出了长夜。</p>
+        <p>本版本暂不保存历史记录，建议截图保存本次结局。</p>
+        <button class="primary-action" type="button" data-action="restart-run">开始新局</button>
+      </section>
+    </main>
+  `;
+
+  root.querySelector('[data-action="restart-run"]').addEventListener('click', () => {
+    resetRunToStart(state);
+    render();
+  });
+}
+
 function renderTechPanel(state) {
   return `
     <section class="tech-panel">
       <h2>技术研究</h2>
       <div class="tech-list">
         ${Object.entries(TECH_DEFINITIONS).map(([techId, definition]) => renderTechCard(state, techId, definition)).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderSettlementDevelopmentPanel(state) {
+  const canAct = !state.isRunning;
+  const warehouseReduction = state.warehouseCount * 5;
+  const growText = state.households >= state.householdCapacity
+    ? '容量已满，需要扩建聚落。'
+    : state.resources.food < 4
+      ? '食物不足。'
+      : `增户：消耗食物4，当前户数 ${state.households} / 容量 ${state.householdCapacity}。`;
+
+  return `
+    <section class="development-panel">
+      <h2>聚落发展</h2>
+      <div class="stat-grid">
+        <div>核心聚落 1</div>
+        <div>扩建次数 ${state.settlementExpansionCount}</div>
+        <div>仓库数量 ${state.warehouseCount}</div>
+        <div>建筑数 ${getBuildingCount(state)}</div>
+        <div>户容量 ${state.householdCapacity}</div>
+        <div>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
+        <div>库存灾害减免 ${warehouseReduction}%</div>
+      </div>
+      <p>${growText}</p>
+      <div class="controls">
+        <button type="button" data-action="grow-household" ${!canAct || state.households >= state.householdCapacity || state.resources.food < 4 ? 'disabled' : ''}>增户</button>
+        <button type="button" data-action="expand-settlement" ${!canAct || !canAfford(state, { food: 5, fuel: 5, material: 10 }) ? 'disabled' : ''}>扩建聚落</button>
+        <button type="button" data-action="build-warehouse" ${!canAct || !canAfford(state, { food: 3, fuel: 5, material: 12 }) ? 'disabled' : ''}>建造仓库</button>
       </div>
     </section>
   `;
@@ -513,7 +598,7 @@ function advanceEra(state, deltaSeconds) {
     state.isRunning = false;
     state.timeLeft = 0;
     state.settlementLines = settleEra(state);
-    state.currentPage = 'settlement';
+    state.currentPage = state.households > 0 && state.era >= MAX_ERA ? 'won' : 'settlement';
   }
 }
 
@@ -548,10 +633,7 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
         if (state.households < state.householdCapacity) {
           state.households += 1;
           state.idleHouseholds += 1;
-          state.highestHouseholdsThisCivilization = Math.max(
-            state.highestHouseholdsThisCivilization,
-            state.households,
-          );
+          updateHighestHouseholds(state);
           state.eventLog.push('一户流民加入了文明。');
         } else {
           state.eventLog.push('有流民经过，但无处安置。');
@@ -605,20 +687,28 @@ function settleEra(state) {
 
 function applyInventoryLosses(state, disasterEffects) {
   const lines = [];
+  const warehouseReduction = state.warehouseCount * 0.05;
 
   Object.entries(disasterEffects.inventoryLoss).forEach(([resource, rate]) => {
     if (rate <= 0) {
       return;
     }
 
+    const effectiveRate = Math.max(0, rate - warehouseReduction);
     const before = state.resources[resource];
-    const lost = Math.ceil(before * rate);
+    const lost = Math.ceil(before * effectiveRate);
     const names = disasterEffects.inventoryNotes
       .filter((note) => note.resource === resource)
       .map((note) => note.name);
     const source = names.length > 0 ? `${[...new Set(names)].join('、')}造成` : '';
     state.resources[resource] = Math.max(0, before - lost);
-    lines.push(`灾害库存损失：${source}${RESOURCE_LABELS[resource]} -${lost}。`);
+    lines.push(`灾害库存损失：${source}${RESOURCE_LABELS[resource]}库存损失${formatNumber(rate * 100)}%。`);
+    if (state.warehouseCount > 0) {
+      lines.push(`仓库减免：仓库${state.warehouseCount}座，库存损失 -${formatNumber(warehouseReduction * 100)}%。`);
+    }
+    lines.push(lost > 0
+      ? `实际${RESOURCE_LABELS[resource]}损失：${lost}。`
+      : '仓库完全抵消了这项库存损失。');
   });
 
   return lines.length > 0 ? lines : ['本纪无库存灾害损失。'];
@@ -753,6 +843,64 @@ function unassignResearchWorker(state, techId) {
   state.idleHouseholds += 1;
 }
 
+function growHousehold(state) {
+  if (state.isRunning || state.households >= state.householdCapacity || state.resources.food < 4) {
+    return;
+  }
+
+  state.resources.food -= 4;
+  state.households += 1;
+  state.idleHouseholds += 1;
+  updateHighestHouseholds(state);
+}
+
+function expandSettlement(state) {
+  const cost = { food: 5, fuel: 5, material: 10 };
+
+  if (state.isRunning || !canAfford(state, cost)) {
+    return;
+  }
+
+  if (!window.confirm('扩建聚落将消耗 食物5、燃料5、材料10。效果：户容量+4，三资源上限+10。是否确认？')) {
+    return;
+  }
+
+  payCost(state, cost);
+  state.settlementExpansionCount += 1;
+  state.householdCapacity += 4;
+  state.resourceCaps.food += 10;
+  state.resourceCaps.fuel += 10;
+  state.resourceCaps.material += 10;
+}
+
+function buildWarehouse(state) {
+  const cost = { food: 3, fuel: 5, material: 12 };
+
+  if (state.isRunning || !canAfford(state, cost)) {
+    return;
+  }
+
+  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少灾害库存损失5%。是否确认？')) {
+    return;
+  }
+
+  payCost(state, cost);
+  state.warehouseCount += 1;
+  state.resourceCaps.food += 20;
+  state.resourceCaps.fuel += 20;
+  state.resourceCaps.material += 20;
+}
+
+function canAfford(state, cost) {
+  return Object.entries(cost).every(([resource, amount]) => state.resources[resource] >= amount);
+}
+
+function payCost(state, cost) {
+  Object.entries(cost).forEach(([resource, amount]) => {
+    state.resources[resource] = Math.max(0, state.resources[resource] - amount);
+  });
+}
+
 function advanceResearch(state, deltaSeconds) {
   Object.entries(state.techs).forEach(([techId, tech]) => {
     if (tech.unlocked || tech.workers <= 0) {
@@ -820,6 +968,8 @@ function prepareGeneration(state, mapData) {
   };
   state.currentCivilizationDeaths = 0;
   state.highestHouseholdsThisCivilization = state.households;
+  state.settlementExpansionCount = 0;
+  state.warehouseCount = 0;
   state.techs = createInitialTechState();
   state.eventLog = [];
   state.isRunning = false;
@@ -827,6 +977,46 @@ function prepareGeneration(state, mapData) {
   state.speed = 1;
   state.settlementLines = [];
   state.pendingLegacyChoice = null;
+}
+
+function resetRunToStart(state) {
+  state.currentPage = 'start';
+  state.generation = 1;
+  state.era = 1;
+  state.mapType = null;
+  state.tiles = [];
+  state.points = [];
+  state.coreCandidates = [];
+  state.selectedCoreIndex = null;
+  state.selectedCorePointId = null;
+  state.selectedCoreAdjacentTileIds = [];
+  state.householdCapacity = 8;
+  state.households = 4;
+  state.idleHouseholds = 4;
+  state.assignedWorkers = [];
+  state.resources = { food: 12, fuel: 8, material: 0 };
+  state.resourceCaps = { food: 30, fuel: 30, material: 30 };
+  state.currentCivilizationDeaths = 0;
+  state.totalDeathsAllCivilizations = 0;
+  state.highestHouseholdsThisCivilization = 4;
+  state.settlementExpansionCount = 0;
+  state.warehouseCount = 0;
+  state.activeLegacyBonus = null;
+  state.pendingLegacyChoice = null;
+  state.techs = createInitialTechState();
+  state.eventLog = [];
+  state.isRunning = false;
+  state.timeLeft = ERA_SECONDS;
+  state.speed = 1;
+  state.settlementLines = [];
+  state.revealedSettlementLines = 0;
+}
+
+function updateHighestHouseholds(state) {
+  state.highestHouseholdsThisCivilization = Math.max(
+    state.highestHouseholdsThisCivilization,
+    state.households,
+  );
 }
 
 function renderIslandMap(state, options = {}) {

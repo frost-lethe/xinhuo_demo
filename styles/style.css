@@ -265,6 +265,12 @@ button:disabled {
   margin-top: 22px;
 }
 
+.development-panel {
+  border-top: 1px solid var(--border);
+  margin-top: 22px;
+  padding-top: 18px;
+}
+
 .tech-list,
 .legacy-options {
   display: grid;

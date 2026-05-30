@@ -24,8 +24,10 @@ export function getMapDisasterProfile(mapType) {
   return profiles[mapType];
 }
 
-export function getBuildingCount() {
-  return 1;
+export function getBuildingCount(state = null) {
+  return 1
+    + (state?.settlementExpansionCount ?? 0)
+    + (state?.warehouseCount ?? 0);
 }
 
 export function getEraDisasterEffects(mapType, era, state = null) {
