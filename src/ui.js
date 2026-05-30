@@ -1712,7 +1712,6 @@ function renderAllPoints(state) {
 function renderTile(tile, size, label = '', isHighlighted = false, index = 0, options = {}, state = null) {
   const work = state ? getWorkForTile(state, index) : null;
   const rule = work && state ? getWorkRule(state, work) : null;
-  const progressText = work && rule ? `${formatNumber(work.progress)}/${rule.progressNeeded}` : '';
   const progressPercent = work && rule
     ? Math.min(100, Math.max(0, (work.progress / rule.progressNeeded) * 100))
     : 0;
@@ -1721,7 +1720,7 @@ function renderTile(tile, size, label = '', isHighlighted = false, index = 0, op
     <div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">
       ${options.showWorkStatus ? `<span class="tile-progress-ring" style="--progress: ${progressPercent}%;"></span>` : ''}
       <span>${label || TERRAIN_LABELS[tile.terrain]}</span>
-      ${options.showWorkStatus && work ? `<small>${rule.name} ${work.workers}/3<br>进度 ${progressText}</small>` : ''}
+      ${options.showWorkStatus && work ? `<small>${rule.name} ${work.workers}/3</small>` : ''}
     </div>
   `;
 }
