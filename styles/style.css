@@ -102,6 +102,24 @@ h2 {
   font-weight: 700;
 }
 
+.disaster-overview,
+.disaster-current {
+  border: 1px solid #d8b66d;
+  border-radius: 8px;
+  margin: 18px 0;
+  padding: 14px;
+  background: #fff6db;
+}
+
+.disaster-overview h2 {
+  margin-bottom: 8px;
+}
+
+.disaster-overview p,
+.disaster-current {
+  line-height: 1.6;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

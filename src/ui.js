@@ -7,6 +7,13 @@ import {
   TERRAIN_LABELS,
   WORK_RULES,
 } from './constants.js';
+import {
+  DISASTER_DESCRIPTIONS,
+  getDisasterAtmosphere,
+  getEraDisasterEffects,
+  getMapDisasterProfile,
+  getWorkEfficiencyMultiplier,
+} from './disasters.js';
 import { countTerrains, generateMap } from './map.js';
 
 export function createGameUI(root, state) {
@@ -113,6 +120,7 @@ function renderStartPage(root, state, render) {
 function renderMapPage(root, state, render) {
   const counts = countTerrains(state.tiles);
   const mapConfig = MAP_TYPES[state.mapType];
+  const disasterProfile = getMapDisasterProfile(state.mapType);
 
   root.innerHTML = `
     <main class="app-shell">
@@ -125,6 +133,12 @@ function renderMapPage(root, state, render) {
           <div>山地 ${counts.mountain}</div>
           <div>${mapConfig.earlyDisaster}</div>
           <div>${mapConfig.midDisaster}</div>
+        </div>
+        <div class="disaster-overview">
+          <h2>灾害介绍</h2>
+          <p>第4-5纪灾害：${disasterProfile.early}。${DISASTER_DESCRIPTIONS[disasterProfile.early]}</p>
+          <p>第8-10纪灾害：${disasterProfile.mid}。${DISASTER_DESCRIPTIONS[disasterProfile.mid]}</p>
+          <p>第12-15纪：终末失序。${DISASTER_DESCRIPTIONS.终末失序}</p>
         </div>
         ${renderIslandMap(state, { size: 'mini' })}
         <button class="primary-action" type="button" data-action="core">进入选址</button>
@@ -201,6 +215,8 @@ function renderCorePage(root, state, render) {
 }
 
 function renderMainPage(root, state, render, startTimer) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
+
   root.innerHTML = `
     <main class="app-shell game-layout">
       <section class="panel">
@@ -214,8 +230,11 @@ function renderMainPage(root, state, render, startTimer) {
           <div>材料 ${formatNumber(state.resources.material)}/${state.resourceCaps.material}</div>
           <div>倒计时 ${formatNumber(state.timeLeft)}秒</div>
         </div>
+        <div class="disaster-current">
+          <strong>${disasterEffects.warning}</strong>
+        </div>
         <div class="work-list">
-          ${state.assignedWorkers.map((work, index) => renderWorkCard(work, index, state.isRunning)).join('')}
+          ${state.assignedWorkers.map((work, index) => renderWorkCard(work, index, state.isRunning, disasterEffects)).join('')}
         </div>
         <div class="controls">
           <button class="primary-action" type="button" data-action="start-era" ${state.isRunning ? 'disabled' : ''}>开始本纪</button>
@@ -249,7 +268,7 @@ function renderMainPage(root, state, render, startTimer) {
     state.isRunning = true;
     state.timeLeft = state.timeLeft > 0 ? state.timeLeft : ERA_SECONDS;
     state.productionThisEra = { food: 0, fuel: 0, material: 0 };
-    state.eventLog = [`第${state.era}纪开始。`];
+    state.eventLog = [`第${state.era}纪开始。`, disasterEffects.warning];
     startTimer();
     render();
   });
@@ -324,10 +343,11 @@ function renderPlaceholderPage(root, title, body) {
   `;
 }
 
-function renderWorkCard(work, index, isRunning) {
+function renderWorkCard(work, index, isRunning, disasterEffects) {
   const rule = WORK_RULES[work.terrain];
+  const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
   const seconds = work.workers > 0
-    ? (Math.max(0, rule.progressNeeded - work.progress) / work.workers)
+    ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
     : null;
   const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
 
@@ -337,6 +357,7 @@ function renderWorkCard(work, index, isRunning) {
       <p>当前工作：${rule.name}</p>
       <p>产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
       <p>已分配户数：${work.workers} / 3</p>
+      <p>效率：${formatNumber(efficiency * 100)}%</p>
       <p>${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}</p>
       <div class="progress-bar"><span style="width: ${progressPercent}%"></span></div>
       <div class="worker-buttons">
@@ -377,13 +398,15 @@ function advanceEra(state, deltaSeconds) {
 }
 
 function produceResources(state, deltaSeconds) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
+
   state.assignedWorkers.forEach((work) => {
     if (work.workers <= 0) {
       return;
     }
 
     const rule = WORK_RULES[work.terrain];
-    work.progress += work.workers * deltaSeconds;
+    work.progress += work.workers * deltaSeconds * getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
 
     while (work.progress >= rule.progressNeeded) {
       work.progress -= rule.progressNeeded;
@@ -410,36 +433,42 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
           state.eventLog.push('有流民经过，但无处安置。');
         }
       } else {
-        state.eventLog.push(`第${second}秒：远处传来风声，族人更加警醒。`);
+        state.eventLog.push(`第${second}秒：${getDisasterAtmosphere(state.mapType, state.era)}`);
       }
     }
   });
 }
 
 function settleEra(state) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   const production = state.productionThisEra || { food: 0, fuel: 0, material: 0 };
   const beforeHouseholds = state.households;
   const foodNeed = 1;
-  const fuelNeed = 0.5;
+  const fuelNeed = 0.5 * disasterEffects.fuelMultiplier + disasterEffects.extraFuelPerHousehold;
+  const inventoryLossLines = applyInventoryLosses(state, disasterEffects);
   const foodCanSupport = Math.floor(state.resources.food / foodNeed);
   const fuelCanSupport = Math.floor(state.resources.fuel / fuelNeed);
   const supported = Math.min(state.households, foodCanSupport, fuelCanSupport);
   const consumedFood = supported * foodNeed;
   const consumedFuel = supported * fuelNeed;
-  const deaths = state.households - supported;
+  const supplyDeaths = state.households - supported;
 
   state.resources.food = roundResource(Math.max(0, state.resources.food - consumedFood));
   state.resources.fuel = roundResource(Math.max(0, state.resources.fuel - consumedFuel));
 
-  if (deaths > 0) {
-    removeDeadHouseholds(state, deaths);
-  }
+  const actualSupplyDeaths = supplyDeaths > 0 ? removeDeadHouseholds(state, supplyDeaths) : 0;
+
+  const materialResult = applyMaterialDemand(state, disasterEffects);
 
   return [
     `本纪资源产出：食物 +${formatNumber(production.food)}，燃料 +${formatNumber(production.fuel)}，材料 +${formatNumber(production.material)}。`,
+    ...createEfficiencySettlementLines(disasterEffects),
+    ...inventoryLossLines,
+    ...createFuelSettlementLines(disasterEffects),
     `食物/燃料供养计算：食物可供养 ${foodCanSupport} 户，燃料可供养 ${fuelCanSupport} 户，实际供养 ${supported}/${beforeHouseholds} 户。`,
     `消耗：食物 ${formatNumber(consumedFood)}，燃料 ${formatNumber(consumedFuel)}。`,
-    `死亡户数：${deaths} 户。`,
+    materialResult.line,
+    `死亡户数：${actualSupplyDeaths + materialResult.deaths} 户。`,
     `本世累计死亡：${state.currentCivilizationDeaths} 户。`,
     `所有世累计死亡：${state.totalDeathsAllCivilizations} 户。`,
     state.households <= 0
@@ -450,8 +479,84 @@ function settleEra(state) {
   ];
 }
 
+function applyInventoryLosses(state, disasterEffects) {
+  const lines = [];
+
+  Object.entries(disasterEffects.inventoryLoss).forEach(([resource, rate]) => {
+    if (rate <= 0) {
+      return;
+    }
+
+    const before = state.resources[resource];
+    const lost = Math.ceil(before * rate);
+    const names = disasterEffects.inventoryNotes
+      .filter((note) => note.resource === resource)
+      .map((note) => note.name);
+    const source = names.length > 0 ? `${[...new Set(names)].join('、')}造成` : '';
+    state.resources[resource] = Math.max(0, before - lost);
+    lines.push(`灾害库存损失：${source}${RESOURCE_LABELS[resource]} -${lost}。`);
+  });
+
+  return lines.length > 0 ? lines : ['本纪无库存灾害损失。'];
+}
+
+function createEfficiencySettlementLines(disasterEffects) {
+  if (disasterEffects.efficiencyNotes.length === 0) {
+    return ['本纪工作效率未受灾害影响。'];
+  }
+
+  return disasterEffects.efficiencyNotes.map((effect) => (
+    `本纪工作效率受到影响：${effect.scope}效率 -${formatNumber((1 - effect.multiplier) * 100)}%。`
+  ));
+}
+
+function createFuelSettlementLines(disasterEffects) {
+  const lines = [];
+
+  if (disasterEffects.fuelMultiplier > 1) {
+    lines.push(`灾害额外需求：基础燃料消耗 +${formatNumber((disasterEffects.fuelMultiplier - 1) * 100)}%。`);
+  }
+
+  if (disasterEffects.extraFuelPerHousehold > 0) {
+    lines.push(`灾害额外需求：每户燃料需求 +${formatNumber(disasterEffects.extraFuelPerHousehold)}。`);
+  }
+
+  return lines.length > 0 ? lines : ['本纪无额外燃料需求。'];
+}
+
+function applyMaterialDemand(state, disasterEffects) {
+  const demand = disasterEffects.materialDemand;
+
+  if (demand <= 0) {
+    return {
+      deaths: 0,
+      line: '本纪无额外材料需求。',
+    };
+  }
+
+  const shortage = Math.max(0, demand - state.resources.material);
+
+  if (shortage <= 0) {
+    state.resources.material = roundResource(state.resources.material - demand);
+    return {
+      deaths: 0,
+      line: `灾害材料需求：需要材料 ${demand}，材料充足。`,
+    };
+  }
+
+  const deaths = Math.ceil(shortage);
+  state.resources.material = 0;
+  const actualDeaths = removeDeadHouseholds(state, deaths);
+
+  return {
+    deaths: actualDeaths,
+    line: `灾害材料需求：需要材料 ${demand}，缺口 ${formatNumber(shortage)}，死亡 ${actualDeaths} 户。`,
+  };
+}
+
 function removeDeadHouseholds(state, deaths) {
-  let remaining = Math.min(deaths, state.households);
+  const actualDeaths = Math.min(deaths, state.households);
+  let remaining = actualDeaths;
   const priority = [TERRAIN.MOUNTAIN, TERRAIN.FOREST, TERRAIN.GRASSLAND];
 
   priority.forEach((terrain) => {
@@ -469,10 +574,11 @@ function removeDeadHouseholds(state, deaths) {
   const idleRemoved = Math.min(state.idleHouseholds, remaining);
   state.idleHouseholds -= idleRemoved;
 
-  state.households -= deaths;
-  state.currentCivilizationDeaths += deaths;
-  state.totalDeathsAllCivilizations += deaths;
+  state.households -= actualDeaths;
+  state.currentCivilizationDeaths += actualDeaths;
+  state.totalDeathsAllCivilizations += actualDeaths;
   state.idleHouseholds = Math.max(0, state.households - state.assignedWorkers.reduce((sum, work) => sum + work.workers, 0));
+  return actualDeaths;
 }
 
 function assignWorker(state, index) {
