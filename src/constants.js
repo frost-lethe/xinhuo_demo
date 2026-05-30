@@ -36,6 +36,15 @@ export const JOB_DEFINITIONS = Object.freeze({
     amount: 3,
     progressNeeded: 50,
   },
+  farming: {
+    id: 'farming',
+    name: '耕种',
+    terrain: TERRAIN.GRASSLAND,
+    requiredTech: 'agriculture',
+    resource: 'food',
+    amount: 6,
+    progressNeeded: 50,
+  },
   logging: {
     id: 'logging',
     name: '伐木',

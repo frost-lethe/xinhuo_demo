@@ -678,11 +678,13 @@ function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
   const warehouseReduction = state.warehouseCount * 5;
   const nextInfluenceCost = getInfluenceUpgradeCost(state.influenceLevel + 1);
+  const householdCost = getHouseholdGrowthCost(state);
+  const householdCostNote = isTechUnlocked(state, 'agriculture') ? '农耕使增户成本降低。' : '';
   const growText = state.households >= state.householdCapacity
-    ? '容量已满，需要扩建聚落。'
-    : state.resources.food < 4
-      ? '食物不足。'
-      : `增户：消耗食物4，当前户数 ${state.households} / 容量 ${state.householdCapacity}。`;
+    ? `增户：消耗食物${householdCost.food}。容量已满，需要扩建聚落。`
+    : state.resources.food < householdCost.food
+      ? `增户：消耗食物${householdCost.food}。${householdCostNote}食物不足。`
+      : `增户：消耗食物${householdCost.food}。${householdCostNote}当前户数 ${state.households} / 容量 ${state.householdCapacity}。`;
 
   return `
     <section class="development-panel">
@@ -710,7 +712,7 @@ function renderSettlementDevelopmentPanel(state) {
       </div>
       <p>${growText}</p>
       <div class="controls">
-        <button type="button" data-action="grow-household" ${!canAct || state.households >= state.householdCapacity || state.resources.food < 4 ? 'disabled' : ''}>增户</button>
+        <button type="button" data-action="grow-household" ${!canAct || state.households >= state.householdCapacity || state.resources.food < householdCost.food ? 'disabled' : ''}>增户（食物${householdCost.food}）</button>
         <button type="button" data-action="upgrade-influence" ${!canAct || state.influenceLevel >= 4 || !canAfford(state, nextInfluenceCost) ? 'disabled' : ''}>升级影响范围</button>
       </div>
     </section>
@@ -719,18 +721,24 @@ function renderSettlementDevelopmentPanel(state) {
 
 function renderTechCard(state, techId, definition) {
   const tech = state.techs[techId];
-  const canEdit = !state.isRunning && !tech.unlocked;
+  const prerequisiteName = definition.prerequisite
+    ? TECH_DEFINITIONS[definition.prerequisite]?.name
+    : null;
+  const prerequisiteMet = !definition.prerequisite || isTechUnlocked(state, definition.prerequisite);
+  const canEdit = !state.isRunning && !tech.unlocked && prerequisiteMet;
 
   return `
     <article class="tech-card">
       <h3>${definition.name}</h3>
       <p>${definition.description}</p>
+      ${prerequisiteName ? `<p>前置：${prerequisiteName}${prerequisiteMet ? '（已满足）' : '（未满足）'}</p>` : ''}
       <p>研究进度：${formatNumber(tech.progress)} / ${definition.requirement}</p>
       <p>研究户数：${tech.workers} / 3</p>
       <div class="worker-buttons">
         <button type="button" data-tech-unassign="${techId}" ${!canEdit || tech.workers <= 0 ? 'disabled' : ''}>-</button>
         <button type="button" data-tech-assign="${techId}" ${!canEdit || tech.workers >= 3 || state.idleHouseholds <= 0 ? 'disabled' : ''}>+</button>
       </div>
+      ${!prerequisiteMet ? `<p class="safe-site-note">需要先研究【${prerequisiteName}】</p>` : ''}
       ${tech.unlocked ? '<p class="safe-site-note">已解锁</p>' : ''}
     </article>
   `;
@@ -763,24 +771,36 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
 }
 
 function renderJobSwitchControl(state, work, index) {
-  if (work.terrain !== TERRAIN.FOREST) {
+  if (![TERRAIN.GRASSLAND, TERRAIN.FOREST].includes(work.terrain)) {
     return '';
   }
 
-  const emberUnlocked = isTechUnlocked(state, 'ember');
   const currentJobId = normalizeWorkJob(state, work);
-  const targetJobId = currentJobId === 'charcoal' ? 'logging' : 'charcoal';
-  const targetRule = JOB_DEFINITIONS[targetJobId];
+  const jobRows = Object.values(JOB_DEFINITIONS)
+    .filter((job) => job.terrain === work.terrain)
+    .map((job) => {
+      const unlocked = !job.requiredTech || isTechUnlocked(state, job.requiredTech);
+      const techName = job.requiredTech ? TECH_DEFINITIONS[job.requiredTech].name : '';
 
-  if (!emberUnlocked && targetJobId === 'charcoal') {
-    return '<p class="safe-site-note">烧炭：需要科技【火种】</p>';
-  }
+      if (job.id === currentJobId) {
+        return `<p>${job.name}：${RESOURCE_LABELS[job.resource]} +${job.amount} / ${job.progressNeeded}（当前）</p>`;
+      }
+
+      if (!unlocked) {
+        return `<p>${job.name}：需要科技【${techName}】</p>`;
+      }
+
+      return `
+        <button type="button" data-switch-job="${index}" data-target-job="${job.id}" ${!canAdjust(state) ? 'disabled' : ''}>
+          切换为${job.name}
+        </button>
+      `;
+    })
+    .join('');
 
   return `
     <div class="controls">
-      <button type="button" data-switch-job="${index}" data-target-job="${targetJobId}" ${!canAdjust(state) ? 'disabled' : ''}>
-        切换为${targetRule.name}
-      </button>
+      ${jobRows}
     </div>
   `;
 }
@@ -1060,8 +1080,15 @@ function switchWorkJob(state, index, targetJobId) {
 
 function assignResearchWorker(state, techId) {
   const tech = state.techs[techId];
+  const definition = TECH_DEFINITIONS[techId];
 
-  if (!canAdjust(state) || !tech || tech.unlocked || state.idleHouseholds <= 0 || tech.workers >= 3) {
+  if (!canAdjust(state)
+    || !tech
+    || !definition
+    || tech.unlocked
+    || (definition.prerequisite && !isTechUnlocked(state, definition.prerequisite))
+    || state.idleHouseholds <= 0
+    || tech.workers >= 3) {
     return;
   }
 
@@ -1081,14 +1108,22 @@ function unassignResearchWorker(state, techId) {
 }
 
 function growHousehold(state) {
-  if (!canAdjust(state) || state.households >= state.householdCapacity || state.resources.food < 4) {
+  const cost = getHouseholdGrowthCost(state);
+
+  if (!canAdjust(state) || state.households >= state.householdCapacity || !canAfford(state, cost)) {
     return;
   }
 
-  state.resources.food -= 4;
+  payCost(state, cost);
   state.households += 1;
   state.idleHouseholds += 1;
   updateHighestHouseholds(state);
+}
+
+function getHouseholdGrowthCost(state) {
+  return {
+    food: isTechUnlocked(state, 'agriculture') ? 3 : 4,
+  };
 }
 
 function expandSettlement(state) {
@@ -1105,9 +1140,7 @@ function expandSettlement(state) {
   payCost(state, cost);
   state.settlementExpansionCount += 1;
   state.householdCapacity += 4;
-  state.resourceCaps.food += 10;
-  state.resourceCaps.fuel += 10;
-  state.resourceCaps.material += 10;
+  addResourceCaps(state, { food: 10, fuel: 10, material: 10 });
 }
 
 function buildWarehouse(state) {
@@ -1123,9 +1156,7 @@ function buildWarehouse(state) {
 
   payCost(state, cost);
   state.warehouseCount += 1;
-  state.resourceCaps.food += 20;
-  state.resourceCaps.fuel += 20;
-  state.resourceCaps.material += 20;
+  addResourceCaps(state, { food: 20, fuel: 20, material: 20 });
 }
 
 function upgradeInfluence(state) {
@@ -1159,9 +1190,7 @@ function buildOrdinarySettlement(state, pointId) {
   state.pointBuildings[pointId] = 'ordinarySettlement';
   state.ordinarySettlementCount += 1;
   state.householdCapacity += 6;
-  state.resourceCaps.food += 20;
-  state.resourceCaps.fuel += 20;
-  state.resourceCaps.material += 20;
+  addResourceCaps(state, { food: 20, fuel: 20, material: 20 });
   refreshWorkTilesFromSettlements(state);
 }
 
@@ -1179,9 +1208,7 @@ function buildPointWarehouse(state, pointId) {
   payCost(state, cost);
   state.pointBuildings[pointId] = 'warehouse';
   state.warehouseCount += 1;
-  state.resourceCaps.food += 20;
-  state.resourceCaps.fuel += 20;
-  state.resourceCaps.material += 20;
+  addResourceCaps(state, { food: 20, fuel: 20, material: 20 });
 }
 
 function getInfluenceUpgradeCost(level) {
@@ -1202,6 +1229,31 @@ function payCost(state, cost) {
   });
 }
 
+function addResourceCaps(state, caps) {
+  ensureBaseResourceCaps(state);
+  Object.entries(caps).forEach(([resource, amount]) => {
+    state.baseResourceCaps[resource] += amount;
+  });
+  refreshResourceCaps(state);
+}
+
+function ensureBaseResourceCaps(state) {
+  if (!state.baseResourceCaps) {
+    state.baseResourceCaps = { ...state.resourceCaps };
+  }
+}
+
+function refreshResourceCaps(state) {
+  ensureBaseResourceCaps(state);
+  const foodMultiplier = isTechUnlocked(state, 'pottery') ? 1.2 : 1;
+
+  state.resourceCaps = {
+    food: Math.ceil(state.baseResourceCaps.food * foodMultiplier),
+    fuel: state.baseResourceCaps.fuel,
+    material: state.baseResourceCaps.material,
+  };
+}
+
 function canAdjust(state) {
   return !state.isRunning;
 }
@@ -1213,12 +1265,19 @@ function advanceResearch(state, deltaSeconds) {
     }
 
     const definition = TECH_DEFINITIONS[techId];
+    if (definition.prerequisite && !isTechUnlocked(state, definition.prerequisite)) {
+      return;
+    }
+
     tech.progress = Math.min(definition.requirement, tech.progress + tech.workers * deltaSeconds);
 
     if (tech.progress >= definition.requirement) {
       tech.unlocked = true;
       state.idleHouseholds += tech.workers;
       tech.workers = 0;
+      if (techId === 'pottery') {
+        refreshResourceCaps(state);
+      }
       state.eventLog.push(`${definition.name}研究完成。`);
     }
   });
@@ -1391,6 +1450,11 @@ function prepareGeneration(state, mapData) {
     fuel: 8 + getLegacyBonus(state, 'extraFuel'),
     material: 0 + getLegacyBonus(state, 'extraMaterial'),
   };
+  state.baseResourceCaps = {
+    food: 30,
+    fuel: 30,
+    material: 30,
+  };
   state.resourceCaps = {
     food: 30,
     fuel: 30,
@@ -1431,6 +1495,7 @@ function resetRunToStart(state) {
   state.idleHouseholds = 4;
   state.assignedWorkers = [];
   state.resources = { food: 12, fuel: 8, material: 0 };
+  state.baseResourceCaps = { food: 30, fuel: 30, material: 30 };
   state.resourceCaps = { food: 30, fuel: 30, material: 30 };
   state.currentCivilizationDeaths = 0;
   state.totalDeathsAllCivilizations = 0;

@@ -11,6 +11,20 @@ export const TECH_DEFINITIONS = Object.freeze({
     requirement: 60,
     description: '山地拾石产出 +1。',
   },
+  agriculture: {
+    id: 'agriculture',
+    name: '农耕',
+    requirement: 80,
+    prerequisite: 'ember',
+    description: '解锁草原工作【耕种】，并使增户成本从食物4降低为食物3。',
+  },
+  pottery: {
+    id: 'pottery',
+    name: '陶器',
+    requirement: 70,
+    prerequisite: 'ember',
+    description: '食物上限 +20%。',
+  },
 });
 
 export function createInitialTechState() {

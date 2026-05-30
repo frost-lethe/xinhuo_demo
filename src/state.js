@@ -37,6 +37,11 @@ export function createInitialState() {
       fuel: 30,
       material: 30,
     },
+    baseResourceCaps: {
+      food: 30,
+      fuel: 30,
+      material: 30,
+    },
     currentCivilizationDeaths: 0,
     totalDeathsAllCivilizations: 0,
     highestHouseholdsThisCivilization: INITIAL_HOUSEHOLDS,
