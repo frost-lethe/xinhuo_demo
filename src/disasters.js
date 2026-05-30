@@ -61,7 +61,7 @@ function applyTechModifiers(effects, state) {
   }
 
   effects.extraFuelPerHousehold *= 0.8;
-  effects.techNotes = ['火种已生效：额外燃料需求降低20%。'];
+  effects.techNotes = ['火种减轻了额外燃料需求：-20%。'];
   effects.notes.push('火种已生效：额外燃料需求降低20%。');
 }
 
@@ -129,48 +129,48 @@ function applyMapDisaster(effects, mapType, era, state) {
   const profile = getMapDisasterProfile(mapType);
 
   if (profile?.early === '寒潮') {
-    if (era === 4) addFuelMultiplier(effects, '寒潮', 0.1, '基础燃料消耗 +10%。');
-    if (era === 5) addExtraFuel(effects, '寒潮', 0.5, '每户额外燃料需求 +0.5。');
+    if (era === 4) addFuelMultiplier(effects, '寒潮', 0.15, '基础燃料消耗 +15%。');
+    if (era === 5) addExtraFuel(effects, '寒潮', 1, '结算时每户额外燃料需求 +1。');
   }
 
   if (profile?.early === '干旱') {
-    if (era === 4) addFoodEfficiency(effects, '干旱', 0.9, '草原效率 -10%。');
-    if (era === 5) addInventoryLoss(effects, '干旱', 'food', 0.08, '食物库存损失 8%。');
+    if (era === 4) addFoodEfficiency(effects, '干旱', 0.85, '草原工作效率 -15%。');
+    if (era === 5) addInventoryLoss(effects, '干旱', 'food', 0.12, '食物库存损失 12%。');
   }
 
   if (profile?.early === '兽群') {
     if (era === 4) addNoteOnly(effects, '兽群', '兽群逼近，外派工作风险上升。');
-    if (era === 5) addMaterialDemand(effects, '兽群', Math.ceil((state?.households ?? 0) * 0.5), '材料需求 = ceil(当前户数 x0.5)。');
+    if (era === 5) addMaterialDemand(effects, '兽群', Math.ceil((state?.households ?? 0) * 0.8), '材料需求 = ceil(当前户数 x0.8)。');
   }
 
   if (profile?.mid === '严冬') {
-    if (era === 8) addFuelMultiplier(effects, '严冬', 0.1, '基础燃料消耗 +10%。');
-    if (era === 9) addFuelMultiplier(effects, '严冬', 0.15, '基础燃料消耗 +15%。');
-    if (era === 10) addExtraFuel(effects, '严冬', 1, '每户额外燃料需求 +1。');
+    if (era === 8) addFuelMultiplier(effects, '严冬', 0.15, '基础燃料消耗 +15%。');
+    if (era === 9) addFuelMultiplier(effects, '严冬', 0.25, '基础燃料消耗 +25%。');
+    if (era === 10) addExtraFuel(effects, '严冬', 1.6, '结算时每户额外燃料需求 +1.6。');
   }
 
   if (profile?.mid === '大旱') {
-    if (era === 8) addFoodEfficiency(effects, '大旱', 0.88, '食物类工作效率 -12%。');
-    if (era === 9) addFoodEfficiency(effects, '大旱', 0.82, '食物类工作效率 -18%。');
-    if (era === 10) addInventoryLoss(effects, '大旱', 'food', 0.12, '食物库存损失 12%。');
+    if (era === 8) addFoodEfficiency(effects, '大旱', 0.82, '食物类工作效率 -18%。');
+    if (era === 9) addFoodEfficiency(effects, '大旱', 0.75, '食物类工作效率 -25%。');
+    if (era === 10) addInventoryLoss(effects, '大旱', 'food', 0.18, '食物库存损失 18%。');
   }
 
   if (profile?.mid === '洪水') {
-    if (era === 8) addInventoryLoss(effects, '洪水', 'food', 0.05, '食物库存损失 5%。');
+    if (era === 8) addInventoryLoss(effects, '洪水', 'food', 0.08, '食物库存损失 8%。');
     if (era === 9) {
-      addInventoryLoss(effects, '洪水', 'food', 0.08, '食物库存损失 8%。');
-      addInventoryLoss(effects, '洪水', 'fuel', 0.05, '燃料库存损失 5%。');
+      addInventoryLoss(effects, '洪水', 'food', 0.12, '食物库存损失 12%。');
+      addInventoryLoss(effects, '洪水', 'fuel', 0.08, '燃料库存损失 8%。');
     }
     if (era === 10) {
-      addMaterialDemand(effects, '洪水', getBuildingCount(state) * 4, '材料需求 = 建筑数 x4。');
-      addInventoryLoss(effects, '洪水', 'food', 0.1, '食物库存损失 10%。');
+      addMaterialDemand(effects, '洪水', getBuildingCount(state) * 6, '材料需求 = 建筑数 x6。');
+      addInventoryLoss(effects, '洪水', 'food', 0.15, '食物库存损失 15%。');
     }
   }
 
   if (profile?.mid === '地震') {
     if (era === 8) addNoteOnly(effects, '地震', '地面传来细碎震动，建筑维护压力正在上升。');
-    if (era === 9) addMaterialDemand(effects, '地震', getBuildingCount(state) * 3, '材料需求 = 建筑数 x3。');
-    if (era === 10) addMaterialDemand(effects, '地震', getBuildingCount(state) * 5, '材料需求 = 建筑数 x5。');
+    if (era === 9) addMaterialDemand(effects, '地震', getBuildingCount(state) * 4, '材料需求 = 建筑数 x4。');
+    if (era === 10) addMaterialDemand(effects, '地震', getBuildingCount(state) * 7, '材料需求 = 建筑数 x7。');
   }
 }
 
@@ -180,27 +180,27 @@ function applyEndgameDisorder(effects, era, state) {
   }
 
   ['food', 'fuel', 'material'].forEach((resource) => {
-    addInventoryLoss(effects, '终末失序', resource, 0.05, `${RESOURCE_LABELS[resource]}库存损失 5%。`);
+    addInventoryLoss(effects, '终末失序', resource, 0.1, `${RESOURCE_LABELS[resource]}库存损失 10%。`);
   });
 
   if (era === 12) {
-    addAllEfficiency(effects, '终末失序', 0.92, '所有工作效率 -8%。');
-    addFuelMultiplier(effects, '终末失序', 0.1, '基础燃料消耗 +10%。');
+    addAllEfficiency(effects, '终末失序', 0.88, '所有工作效率 -12%。');
+    addFuelMultiplier(effects, '终末失序', 0.15, '基础燃料消耗 +15%。');
   }
 
   if (era === 13) {
-    addFoodEfficiency(effects, '终末失序', 0.88, '食物类工作效率 -12%。');
-    addInventoryLoss(effects, '终末失序', 'food', 0.1, '食物库存损失 10%。');
+    addFoodEfficiency(effects, '终末失序', 0.82, '食物类工作效率 -18%。');
+    addInventoryLoss(effects, '终末失序', 'food', 0.15, '食物库存损失 15%。');
   }
 
   if (era === 14) {
-    addMaterialDemand(effects, '终末失序', getBuildingCount(state) * 5, '材料需求 = 建筑数 x5。');
+    addMaterialDemand(effects, '终末失序', getBuildingCount(state) * 7, '材料需求 = 建筑数 x7。');
   }
 
   if (era === 15) {
-    addExtraFuel(effects, '终末失序', 1, '每户额外燃料需求 +1。');
-    addInventoryLoss(effects, '终末失序', 'food', 0.12, '食物库存损失 12%。');
-    addMaterialDemand(effects, '终末失序', getBuildingCount(state) * 6, '材料需求 = 建筑数 x6。');
+    addExtraFuel(effects, '终末失序', 2, '结算时每户额外燃料需求 +2。');
+    addInventoryLoss(effects, '终末失序', 'food', 0.18, '食物库存损失 18%。');
+    addMaterialDemand(effects, '终末失序', getBuildingCount(state) * 8, '材料需求 = 建筑数 x8。');
   }
 }
 

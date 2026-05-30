@@ -243,7 +243,7 @@ function renderMainPage(root, state, render, startTimer) {
         </div>
         ${renderSettlementDevelopmentPanel(state)}
         <div class="controls">
-          <button class="primary-action" type="button" data-action="start-era" ${state.isRunning ? 'disabled' : ''}>开始本纪</button>
+          <button class="primary-action" type="button" data-action="start-era" ${state.isRunning || state.timeLeft < ERA_SECONDS ? 'disabled' : ''}>开始本纪</button>
           <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
           <button type="button" data-speed="1" class="${state.speed === 1 ? 'is-selected' : ''}">1x</button>
           <button type="button" data-speed="2" class="${state.speed === 2 ? 'is-selected' : ''}">2x</button>
@@ -802,7 +802,7 @@ function removeDeadHouseholds(state, deaths) {
 function assignWorker(state, index) {
   const work = state.assignedWorkers[index];
 
-  if (!work || state.idleHouseholds <= 0 || work.workers >= 3) {
+  if (!canAdjust(state) || !work || state.idleHouseholds <= 0 || work.workers >= 3) {
     return;
   }
 
@@ -813,7 +813,7 @@ function assignWorker(state, index) {
 function unassignWorker(state, index) {
   const work = state.assignedWorkers[index];
 
-  if (!work || work.workers <= 0) {
+  if (!canAdjust(state) || !work || work.workers <= 0) {
     return;
   }
 
@@ -824,7 +824,7 @@ function unassignWorker(state, index) {
 function assignResearchWorker(state, techId) {
   const tech = state.techs[techId];
 
-  if (!tech || tech.unlocked || state.isRunning || state.idleHouseholds <= 0 || tech.workers >= 3) {
+  if (!canAdjust(state) || !tech || tech.unlocked || state.idleHouseholds <= 0 || tech.workers >= 3) {
     return;
   }
 
@@ -835,7 +835,7 @@ function assignResearchWorker(state, techId) {
 function unassignResearchWorker(state, techId) {
   const tech = state.techs[techId];
 
-  if (!tech || state.isRunning || tech.workers <= 0) {
+  if (!canAdjust(state) || !tech || tech.workers <= 0) {
     return;
   }
 
@@ -844,7 +844,7 @@ function unassignResearchWorker(state, techId) {
 }
 
 function growHousehold(state) {
-  if (state.isRunning || state.households >= state.householdCapacity || state.resources.food < 4) {
+  if (!canAdjust(state) || state.households >= state.householdCapacity || state.resources.food < 4) {
     return;
   }
 
@@ -857,7 +857,7 @@ function growHousehold(state) {
 function expandSettlement(state) {
   const cost = { food: 5, fuel: 5, material: 10 };
 
-  if (state.isRunning || !canAfford(state, cost)) {
+  if (!canAdjust(state) || !canAfford(state, cost)) {
     return;
   }
 
@@ -876,7 +876,7 @@ function expandSettlement(state) {
 function buildWarehouse(state) {
   const cost = { food: 3, fuel: 5, material: 12 };
 
-  if (state.isRunning || !canAfford(state, cost)) {
+  if (!canAdjust(state) || !canAfford(state, cost)) {
     return;
   }
 
@@ -899,6 +899,10 @@ function payCost(state, cost) {
   Object.entries(cost).forEach(([resource, amount]) => {
     state.resources[resource] = Math.max(0, state.resources[resource] - amount);
   });
+}
+
+function canAdjust(state) {
+  return !state.isRunning;
 }
 
 function advanceResearch(state, deltaSeconds) {
