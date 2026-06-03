@@ -234,6 +234,7 @@ function renderMainPage(root, state, render, startTimer) {
 
   root.querySelectorAll('[data-open-panel]').forEach((button) => {
     button.addEventListener('click', () => {
+      closePointModal(state);
       state.openPanel = button.dataset.openPanel;
       render();
     });
@@ -241,7 +242,7 @@ function renderMainPage(root, state, render, startTimer) {
 
   root.querySelectorAll('[data-close-panel]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.openPanel = null;
+      closePanelModal(state);
       render();
     });
   });
@@ -276,6 +277,7 @@ function renderMainPage(root, state, render, startTimer) {
   root.querySelectorAll('[data-main-point]').forEach((point) => {
     point.addEventListener('click', (event) => {
       event.stopPropagation();
+      closePanelModal(state);
       state.openPointId = point.dataset.mainPoint;
       render();
     });
@@ -287,12 +289,14 @@ function renderMainPage(root, state, render, startTimer) {
     }
 
     if (event.target.closest('[data-close-point-modal]')) {
-      closePointModal(state, render);
+      closePointModal(state);
+      render();
       return;
     }
 
     if (!event.target.closest('[data-point-modal-panel]')) {
-      closePointModal(state, render);
+      closePointModal(state);
+      render();
     }
   });
 
@@ -302,7 +306,8 @@ function renderMainPage(root, state, render, startTimer) {
 
   root.querySelectorAll('[data-close-point-modal]').forEach((button) => {
     button.addEventListener('click', () => {
-      closePointModal(state, render);
+      closePointModal(state);
+      render();
     });
   });
 
@@ -366,12 +371,19 @@ function renderMainPage(root, state, render, startTimer) {
 
   document.onkeydown = (event) => {
     if (event.key === 'Escape' && state.openPointId) {
-      closePointModal(state, render);
+      closePointModal(state);
+      render();
+      return;
+    }
+
+    if (event.key === 'Escape' && state.openPanel) {
+      closePanelModal(state);
+      render();
     }
   };
 }
 
-function closePointModal(state, render) {
+function closePointModal(state) {
   state.openPointId = null;
   if ('selectedPointId' in state) {
     state.selectedPointId = null;
@@ -382,7 +394,15 @@ function closePointModal(state, render) {
   if (state.openModal === 'point') {
     state.openModal = null;
   }
-  render();
+}
+
+function closePanelModal(state) {
+  state.openPanel = null;
+}
+
+function closeAllModals(state) {
+  closePointModal(state);
+  closePanelModal(state);
 }
 
 function renderTopHud(state) {
@@ -1593,8 +1613,7 @@ function prepareGeneration(state, mapData) {
   state.selectedCorePointId = null;
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
-  state.openPointId = null;
-  state.openPanel = null;
+  closeAllModals(state);
   state.panelScrollTop = 0;
   state.influenceLevel = 1;
   state.pointBuildings = {};
@@ -1645,8 +1664,7 @@ function resetRunToStart(state) {
   state.selectedCorePointId = null;
   state.selectedCoreAdjacentTileIds = [];
   state.selectedTileIndex = null;
-  state.openPointId = null;
-  state.openPanel = null;
+  closeAllModals(state);
   state.panelScrollTop = 0;
   state.influenceLevel = 1;
   state.pointBuildings = {};
