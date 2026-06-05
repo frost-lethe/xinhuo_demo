@@ -432,11 +432,20 @@ function closePointModal(state) {
 
 function closePanelModal(state) {
   state.openPanel = null;
+  if (state.openModal === 'panel') {
+    state.openModal = null;
+  }
 }
 
 function closeAllModals(state) {
   closePointModal(state);
   closePanelModal(state);
+  if ('activeModal' in state) {
+    state.activeModal = null;
+  }
+  if ('openModal' in state) {
+    state.openModal = null;
+  }
 }
 
 function renderTopHud(state) {
@@ -690,11 +699,13 @@ function renderSettlementPage(root, state, render) {
   const nextButton = root.querySelector('[data-action="next-era"]');
   if (nextButton) {
     nextButton.addEventListener('click', () => {
+      closeAllModals(state);
       state.era += 1;
       state.currentPage = 'main';
       state.eventLog = [];
       state.timeLeft = ERA_SECONDS;
       state.isRunning = false;
+      state.panelScrollTop = 0;
       render();
     });
   }
@@ -702,7 +713,9 @@ function renderSettlementPage(root, state, render) {
   const lostButton = root.querySelector('[data-action="lost"]');
   if (lostButton) {
     lostButton.addEventListener('click', () => {
+      closeAllModals(state);
       state.currentPage = 'lost';
+      state.panelScrollTop = 0;
       render();
     });
   }
@@ -710,7 +723,9 @@ function renderSettlementPage(root, state, render) {
   const wonButton = root.querySelector('[data-action="won"]');
   if (wonButton) {
     wonButton.addEventListener('click', () => {
+      closeAllModals(state);
       state.currentPage = 'won';
+      state.panelScrollTop = 0;
       render();
     });
   }
@@ -752,9 +767,11 @@ function renderLostPage(root, state, render) {
   `;
 
   root.querySelector('[data-action="choose-legacy"]').addEventListener('click', () => {
+    closeAllModals(state);
     state.pendingLegacyChoice = null;
     state.pendingLegacyChoices = [];
     state.currentPage = 'legacy';
+    state.panelScrollTop = 0;
     render();
   });
 }
@@ -1145,6 +1162,8 @@ function advanceEra(state, deltaSeconds) {
   if (state.timeLeft <= 0) {
     state.isRunning = false;
     state.timeLeft = 0;
+    closeAllModals(state);
+    state.panelScrollTop = 0;
     state.settlementLines = settleEra(state);
     state.currentPage = state.households > 0 && state.era >= MAX_ERA ? 'won' : 'settlement';
     eraEnded = true;
