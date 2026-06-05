@@ -111,7 +111,7 @@ export function createGameUI(root, state) {
       lastTickAt = now;
 
       if (state.isRunning) {
-        advanceEra(state, deltaSeconds);
+        const tickResult = advanceEra(state, deltaSeconds);
         if (state.currentPage === 'settlement') {
           stopTimer();
         }
@@ -120,12 +120,12 @@ export function createGameUI(root, state) {
           return;
         }
 
-        if (state.openPanel || state.openPointId) {
-          updateMainStatusOnly(root, state);
+        if (tickResult.techUnlocked) {
+          render();
           return;
         }
 
-        render();
+        updateDynamicUI(root, state);
       }
     }, 250);
   };
@@ -440,26 +440,20 @@ function closeAllModals(state) {
 }
 
 function renderTopHud(state) {
-  const timerText = state.isRunning
-    ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
-    : state.timeLeft < ERA_SECONDS
-      ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
-      : '准备阶段';
-
   return `
     <header class="top-hud">
       <div class="hud-left">
         <strong>原始聚落</strong>
         <span>地图 ${state.mapType}</span>
         <span>第 ${state.generation} 世</span>
-        <span>第 ${state.era} / ${MAX_ERA} 纪</span>
-        <span>总计 ${state.households} / ${state.householdCapacity} 户</span>
-        <span>空闲户 ${state.idleHouseholds}</span>
-        <span>食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}</span>
-        <span>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</span>
-        <span>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</span>
+        <span data-hud-era>第 ${state.era} / ${MAX_ERA} 纪</span>
+        <span data-hud-households>总计 ${state.households} / ${state.householdCapacity} 户</span>
+        <span data-hud-idle>空闲户 ${state.idleHouseholds}</span>
+        <span data-hud-food>食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}</span>
+        <span data-hud-fuel>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</span>
+        <span data-hud-material>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</span>
       </div>
-      <div class="hud-timer">${timerText}</div>
+      <div class="hud-timer" data-hud-timer>${getTimerText(state)}</div>
       <div class="hud-controls">
         <button class="primary-action" type="button" data-action="start-era" ${state.isRunning || state.timeLeft < ERA_SECONDS ? 'disabled' : ''}>开始本纪</button>
         <button type="button" data-action="pause">${state.isRunning ? '暂停' : '继续'}</button>
@@ -470,6 +464,14 @@ function renderTopHud(state) {
       </div>
     </header>
   `;
+}
+
+function getTimerText(state) {
+  return state.isRunning
+    ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
+    : state.timeLeft < ERA_SECONDS
+      ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
+      : '准备阶段';
 }
 
 function renderEventWarningPanel(state, disasterEffects) {
@@ -486,17 +488,127 @@ function renderEventWarningPanel(state, disasterEffects) {
   `;
 }
 
-function updateMainStatusOnly(root, state) {
-  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
-  const topHud = root.querySelector('.top-hud');
-  const eventPanel = root.querySelector('.event-warning-panel');
+function updateDynamicUI(root, state) {
+  updateHudDynamicFields(root, state);
+  updateEventPanelDynamicFields(root, state);
+  updateMapDynamicFields(root, state);
+  updateOpenPanelDynamicFields(root, state);
+  updatePointModalDynamicFields(root, state);
+}
 
-  if (topHud) {
-    topHud.outerHTML = renderTopHud(state);
-  }
+function updateHudDynamicFields(root, state) {
+  setText(root.querySelector('[data-hud-timer]'), getTimerText(state));
+  setText(root.querySelector('[data-hud-era]'), `第 ${state.era} / ${MAX_ERA} 纪`);
+  setText(root.querySelector('[data-hud-households]'), `总计 ${state.households} / ${state.householdCapacity} 户`);
+  setText(root.querySelector('[data-hud-idle]'), `空闲户 ${state.idleHouseholds}`);
+  setText(root.querySelector('[data-hud-food]'), `食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}`);
+  setText(root.querySelector('[data-hud-fuel]'), `燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}`);
+  setText(root.querySelector('[data-hud-material]'), `材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}`);
+}
+
+function updateEventPanelDynamicFields(root, state) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
+  const eventPanel = root.querySelector('.event-warning-panel');
 
   if (eventPanel) {
     eventPanel.outerHTML = renderEventWarningPanel(state, disasterEffects);
+  }
+}
+
+function updateMapDynamicFields(root, state) {
+  state.assignedWorkers.forEach((work) => {
+    const rule = getWorkRule(state, work);
+    const progressPercent = Math.min(100, Math.max(0, (work.progress / rule.progressNeeded) * 100));
+    const ring = root.querySelector(`[data-map-tile-progress="${work.tileIndex}"]`);
+
+    ring?.style.setProperty('--progress', `${progressPercent}%`);
+    setText(root.querySelector(`[data-map-tile-label="${work.tileIndex}"]`), `${rule.name} ${work.workers}/3`);
+  });
+}
+
+function updateOpenPanelDynamicFields(root, state) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
+
+  if (state.openPanel === 'work') {
+    updateWorkPanelDynamicFields(root, state, disasterEffects);
+  }
+
+  if (state.openPanel === 'tech') {
+    updateTechPanelDynamicFields(root, state);
+  }
+
+  if (state.openPanel === 'development') {
+    updateSettlementPanelDynamicFields(root, state);
+  }
+}
+
+function updateWorkPanelDynamicFields(root, state, disasterEffects) {
+  state.assignedWorkers.forEach((work) => {
+    const rule = getWorkRule(state, work);
+    const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
+    const seconds = work.workers > 0
+      ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
+      : null;
+    const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
+    const tileIndex = work.tileIndex;
+
+    setText(root.querySelector(`[data-work-current-job="${tileIndex}"]`), `当前工作：${rule.name}`);
+    setText(root.querySelector(`[data-work-output="${tileIndex}"]`), `产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}`);
+    setText(root.querySelector(`[data-work-workers="${tileIndex}"]`), `已分配户数：${work.workers} / 3`);
+    setText(root.querySelector(`[data-work-rate="${tileIndex}"]`), `${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}`);
+    root.querySelector(`[data-work-progress="${tileIndex}"]`)?.style.setProperty('width', `${progressPercent}%`);
+  });
+}
+
+function updateTechPanelDynamicFields(root, state) {
+  Object.entries(TECH_DEFINITIONS).forEach(([techId, definition]) => {
+    const tech = state.techs[techId];
+
+    if (!tech) {
+      return;
+    }
+
+    setText(root.querySelector(`[data-tech-progress="${techId}"]`), `研究进度：${formatNumber(tech.progress)} / ${definition.requirement}`);
+    setText(root.querySelector(`[data-tech-workers="${techId}"]`), `研究户数：${tech.workers} / 3`);
+    setText(root.querySelector(`[data-tech-status="${techId}"]`), tech.unlocked ? '已解锁' : '');
+  });
+}
+
+function updateSettlementPanelDynamicFields(root, state) {
+  const warehouseReduction = state.warehouseCount * 5;
+
+  setText(root.querySelector('[data-settlement-households]'), `当前户数 ${state.households}`);
+  setText(root.querySelector('[data-settlement-idle]'), `空闲户 ${state.idleHouseholds}`);
+  setText(root.querySelector('[data-settlement-capacity]'), `户容量 ${state.householdCapacity}`);
+  setText(root.querySelector('[data-settlement-resources]'), `资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}`);
+  setText(root.querySelector('[data-settlement-influence]'), `影响范围等级 ${state.influenceLevel} / 4`);
+  setText(root.querySelector('[data-settlement-buildings]'), `建筑数 ${getBuildingCount(state)}`);
+  setText(root.querySelector('[data-settlement-warehouses]'), `仓库数量 ${state.warehouseCount}`);
+  setText(root.querySelector('[data-settlement-ordinary]'), `普通聚落数量 ${state.ordinarySettlementCount}`);
+  setText(root.querySelector('[data-settlement-storage-reduction]'), `库存灾害减免 ${warehouseReduction}%`);
+}
+
+function updatePointModalDynamicFields(root, state) {
+  if (!state.openPointId) {
+    return;
+  }
+
+  const point = state.points.find((item) => item.id === state.openPointId);
+  point?.adjacentTileIds.forEach((tileId) => {
+    const tileIndex = tileId - 1;
+    const work = getWorkForTile(state, tileIndex);
+    const tile = state.tiles[tileIndex];
+    const rule = work ? getWorkRule(state, work) : getWorkRule(state, { terrain: tile.terrain });
+    setText(
+      root.querySelector(`[data-point-work-progress="${tileIndex}"]`),
+      `地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}`,
+    );
+  });
+}
+
+function setText(element, text) {
+  if (element && element.textContent !== text) {
+    element.textContent = text;
   }
 }
 
@@ -791,7 +903,7 @@ function renderPointModal(state, disasterEffects) {
       const rule = work ? getWorkRule(state, work) : getWorkRule(state, { terrain: tile.terrain });
 
       return `
-        <li>
+        <li data-point-work-progress="${tileIndex}">
           地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：
           ${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}
         </li>
@@ -891,15 +1003,17 @@ function renderSettlementDevelopmentPanel(state) {
       <h2>聚落发展</h2>
       <div class="stat-grid">
         <div>核心聚落 1</div>
-        <div>影响范围等级 ${state.influenceLevel} / 4</div>
+        <div data-settlement-influence>影响范围等级 ${state.influenceLevel} / 4</div>
         <div>可建设距离 聚落周围 ${state.influenceLevel} 格点</div>
-        <div>普通聚落数量 ${state.ordinarySettlementCount}</div>
-        <div>仓库数量 ${state.warehouseCount}</div>
+        <div data-settlement-ordinary>普通聚落数量 ${state.ordinarySettlementCount}</div>
+        <div data-settlement-warehouses>仓库数量 ${state.warehouseCount}</div>
         <div>当前可建设点 ${getBuildablePoints(state).length}</div>
-        <div>建筑数 ${getBuildingCount(state)}</div>
-        <div>户容量 ${state.householdCapacity}</div>
-        <div>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
-        <div>库存灾害减免 ${warehouseReduction}%</div>
+        <div data-settlement-buildings>建筑数 ${getBuildingCount(state)}</div>
+        <div data-settlement-capacity>户容量 ${state.householdCapacity}</div>
+        <div data-settlement-resources>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
+        <div data-settlement-storage-reduction>库存灾害减免 ${warehouseReduction}%</div>
+        <div data-settlement-households>当前户数 ${state.households}</div>
+        <div data-settlement-idle>空闲户 ${state.idleHouseholds}</div>
       </div>
       <p>${state.influenceLevel >= 4 ? '已达到最高影响范围。' : `下一级升级成本：燃料${nextInfluenceCost.fuel} / 材料${nextInfluenceCost.material}。`}</p>
       <p>普通聚落和仓库现在需要点击地图上的可建设顶点建造。</p>
@@ -928,18 +1042,18 @@ function renderTechCard(state, techId, definition) {
   const canEdit = !state.isRunning && !tech.unlocked && prerequisiteMet;
 
   return `
-    <article class="tech-card">
+    <article class="tech-card" data-tech-card="${techId}">
       <h3>${definition.name}</h3>
       <p>${definition.description}</p>
       ${prerequisiteName ? `<p>前置：${prerequisiteName}${prerequisiteMet ? '（已满足）' : '（未满足）'}</p>` : ''}
-      <p>研究进度：${formatNumber(tech.progress)} / ${definition.requirement}</p>
-      <p>研究户数：${tech.workers} / 3</p>
+      <p data-tech-progress="${techId}">研究进度：${formatNumber(tech.progress)} / ${definition.requirement}</p>
+      <p data-tech-workers="${techId}">研究户数：${tech.workers} / 3</p>
       <div class="worker-buttons">
         <button type="button" data-tech-unassign="${techId}" ${!canEdit || tech.workers <= 0 ? 'disabled' : ''}>-</button>
         <button type="button" data-tech-assign="${techId}" ${!canEdit || tech.workers >= 3 || state.idleHouseholds <= 0 ? 'disabled' : ''}>+</button>
       </div>
       ${!prerequisiteMet ? `<p class="safe-site-note">需要先研究【${prerequisiteName}】</p>` : ''}
-      ${tech.unlocked ? '<p class="safe-site-note">已解锁</p>' : ''}
+      <p class="safe-site-note" data-tech-status="${techId}">${tech.unlocked ? '已解锁' : ''}</p>
     </article>
   `;
 }
@@ -953,14 +1067,14 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
   const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
 
   return `
-    <article class="work-card">
+    <article class="work-card" data-work-card="${work.tileIndex}">
       <h2>${TERRAIN_LABELS[work.terrain]}</h2>
-      <p>当前工作：${rule.name}</p>
-      <p>产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
-      <p>已分配户数：${work.workers} / 3</p>
+      <p data-work-current-job="${work.tileIndex}">当前工作：${rule.name}</p>
+      <p data-work-output="${work.tileIndex}">产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
+      <p data-work-workers="${work.tileIndex}">已分配户数：${work.workers} / 3</p>
       <p>效率：${formatNumber(efficiency * 100)}%</p>
-      <p>${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}</p>
-      <div class="progress-bar"><span style="width: ${progressPercent}%"></span></div>
+      <p data-work-rate="${work.tileIndex}">${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}</p>
+      <div class="progress-bar"><span data-work-progress="${work.tileIndex}" style="width: ${progressPercent}%"></span></div>
       <div class="worker-buttons">
         <button type="button" data-unassign="${index}" ${work.workers <= 0 || isRunning ? 'disabled' : ''}>-</button>
         <button type="button" data-assign="${index}" ${work.workers >= 3 || isRunning ? 'disabled' : ''}>+</button>
@@ -1024,15 +1138,19 @@ function advanceEra(state, deltaSeconds) {
   const currentElapsed = ERA_SECONDS - state.timeLeft;
 
   produceResources(state, adjustedDelta);
-  advanceResearch(state, adjustedDelta);
-  triggerTimedEvents(state, previousElapsed, currentElapsed);
+  const techUnlocked = advanceResearch(state, adjustedDelta);
+  const eventTriggered = triggerTimedEvents(state, previousElapsed, currentElapsed);
+  let eraEnded = false;
 
   if (state.timeLeft <= 0) {
     state.isRunning = false;
     state.timeLeft = 0;
     state.settlementLines = settleEra(state);
     state.currentPage = state.households > 0 && state.era >= MAX_ERA ? 'won' : 'settlement';
+    eraEnded = true;
   }
+
+  return { techUnlocked, eventTriggered, eraEnded };
 }
 
 function produceResources(state, deltaSeconds) {
@@ -1060,8 +1178,11 @@ function produceResources(state, deltaSeconds) {
 }
 
 function triggerTimedEvents(state, previousElapsed, currentElapsed) {
+  let triggered = false;
+
   [20, 40].forEach((second) => {
     if (previousElapsed < second && currentElapsed >= second) {
+      triggered = true;
       if (Math.random() < 0.1) {
         if (state.households < state.householdCapacity) {
           state.households += 1;
@@ -1076,6 +1197,8 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
       }
     }
   });
+
+  return triggered;
 }
 
 function settleEra(state) {
@@ -1478,6 +1601,8 @@ function canAdjust(state) {
 }
 
 function advanceResearch(state, deltaSeconds) {
+  let unlockedAny = false;
+
   Object.entries(state.techs).forEach(([techId, tech]) => {
     if (tech.unlocked || tech.workers <= 0) {
       return;
@@ -1495,6 +1620,7 @@ function advanceResearch(state, deltaSeconds) {
 
     if (tech.progress >= definition.requirement) {
       tech.unlocked = true;
+      unlockedAny = true;
       state.idleHouseholds += tech.workers;
       tech.workers = 0;
       if (techId === 'pottery') {
@@ -1503,6 +1629,8 @@ function advanceResearch(state, deltaSeconds) {
       state.eventLog.push(`${definition.name}研究完成。`);
     }
   });
+
+  return unlockedAny;
 }
 
 function getWorkRule(state, work) {
@@ -1820,9 +1948,9 @@ function renderTile(tile, size, label = '', isHighlighted = false, index = 0, op
 
   return `
     <div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">
-      ${options.showWorkStatus ? `<span class="tile-progress-ring" style="--progress: ${progressPercent}%;"></span>` : ''}
+      ${options.showWorkStatus ? `<span class="tile-progress-ring" data-map-tile-progress="${index}" style="--progress: ${progressPercent}%;"></span>` : ''}
       <span>${label || TERRAIN_LABELS[tile.terrain]}</span>
-      ${options.showWorkStatus && work ? `<small>${rule.name} ${work.workers}/3</small>` : ''}
+      ${options.showWorkStatus && work ? `<small data-map-tile-label="${index}" data-map-tile-workers="${index}">${rule.name} ${work.workers}/3</small>` : ''}
     </div>
   `;
 }
