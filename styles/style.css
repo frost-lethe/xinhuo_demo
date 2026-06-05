@@ -9,6 +9,18 @@
   --border: #d6cdb9;
 }
 
+/*
+Z-index layers:
+- base map/content: 1-20
+- top HUD: 100
+- event panel / right rail: 110-120
+- transparent modal overlay: 1000
+- modal panel: 1010
+- point modal overlay: 1100
+- point modal panel: 1110
+- emergency/topmost: 9999
+*/
+
 * {
   box-sizing: border-box;
 }
@@ -365,20 +377,21 @@ h2 {
 .point-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 99999;
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(0 0 0 / 0.02);
   pointer-events: auto;
 }
 
 .point-modal {
   position: relative;
-  z-index: 100000;
+  z-index: 1110;
   width: min(70vw, 760px);
   max-height: 80vh;
   overflow-y: auto;
+  pointer-events: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 24px;
@@ -390,13 +403,14 @@ h2 {
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 100001;
+  z-index: 1120;
   width: 34px;
   height: 34px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #fffdf7;
   cursor: pointer;
+  pointer-events: auto;
   font-size: 1.25rem;
   line-height: 1;
 }
@@ -660,7 +674,7 @@ button:disabled {
   position: fixed;
   top: 94px;
   right: 16px;
-  z-index: 80;
+  z-index: 110;
   width: min(340px, calc(100vw - 32px));
   max-height: 34vh;
   overflow: auto;
@@ -695,7 +709,7 @@ button:disabled {
   position: fixed;
   top: calc(94px + 34vh + 18px);
   right: 16px;
-  z-index: 85;
+  z-index: 120;
   display: grid;
   gap: 10px;
   width: 150px;
@@ -742,19 +756,22 @@ button:disabled {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 130;
+  z-index: 1000;
   display: grid;
   place-items: center;
   padding: 28px;
-  background: rgb(12 17 15 / 0.68);
-  backdrop-filter: blur(2px);
+  background: rgb(0 0 0 / 0.02);
+  pointer-events: auto;
 }
 
 .modal-panel {
+  position: relative;
+  z-index: 1010;
   width: min(70vw, 980px);
   height: min(70vh, 760px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  pointer-events: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);

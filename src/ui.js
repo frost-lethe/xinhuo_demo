@@ -40,6 +40,23 @@ export function createGameUI(root, state) {
     }
   };
 
+  const handleKeyboardEvent = (event) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+
+    if (state.openPointId) {
+      closePointModal(state);
+      render();
+      return;
+    }
+
+    if (state.openPanel) {
+      closePanelModal(state);
+      render();
+    }
+  };
+
   const render = () => {
     rememberPanelScroll(root, state);
 
@@ -98,11 +115,22 @@ export function createGameUI(root, state) {
         if (state.currentPage === 'settlement') {
           stopTimer();
         }
+        if (state.currentPage !== 'main') {
+          render();
+          return;
+        }
+
+        if (state.openPanel || state.openPointId) {
+          updateMainStatusOnly(root, state);
+          return;
+        }
+
         render();
       }
     }, 250);
   };
 
+  document.onkeydown = handleKeyboardEvent;
   render();
 }
 
@@ -230,6 +258,7 @@ function renderMainPage(root, state, render, startTimer) {
       </section>
       ${renderPanelModal(state, disasterEffects)}
     </main>
+    ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
   `;
 
   root.querySelectorAll('[data-open-panel]').forEach((button) => {
@@ -240,15 +269,32 @@ function renderMainPage(root, state, render, startTimer) {
     });
   });
 
+  root.querySelector('[data-panel-modal-backdrop]')?.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    if (event.target.closest('[data-close-panel]')) {
+      closePanelModal(state);
+      render();
+      return;
+    }
+
+    if (!event.target.closest('[data-panel-modal-panel]')) {
+      closePanelModal(state);
+      render();
+    }
+  });
+
+  root.querySelector('[data-panel-modal-panel]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
   root.querySelectorAll('[data-close-panel]').forEach((button) => {
     button.addEventListener('click', () => {
       closePanelModal(state);
       render();
     });
-  });
-
-  root.querySelector('[data-panel-modal]')?.addEventListener('click', (event) => {
-    event.stopPropagation();
   });
 
   restorePanelScroll(root, state);
@@ -369,18 +415,6 @@ function renderMainPage(root, state, render, startTimer) {
     });
   });
 
-  document.onkeydown = (event) => {
-    if (event.key === 'Escape' && state.openPointId) {
-      closePointModal(state);
-      render();
-      return;
-    }
-
-    if (event.key === 'Escape' && state.openPanel) {
-      closePanelModal(state);
-      render();
-    }
-  };
 }
 
 function closePointModal(state) {
@@ -452,6 +486,20 @@ function renderEventWarningPanel(state, disasterEffects) {
   `;
 }
 
+function updateMainStatusOnly(root, state) {
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
+  const topHud = root.querySelector('.top-hud');
+  const eventPanel = root.querySelector('.event-warning-panel');
+
+  if (topHud) {
+    topHud.outerHTML = renderTopHud(state);
+  }
+
+  if (eventPanel) {
+    eventPanel.outerHTML = renderEventWarningPanel(state, disasterEffects);
+  }
+}
+
 function renderRightActionRail() {
   return `
     <nav class="right-action-rail" aria-label="功能入口">
@@ -485,8 +533,8 @@ function renderPanelModal(state, disasterEffects) {
   }[state.openPanel] ?? '';
 
   return `
-    <div class="modal-overlay" data-close-panel>
-      <section class="modal-panel" role="dialog" aria-modal="true" data-panel-modal>
+    <div class="modal-overlay" data-panel-modal-backdrop>
+      <section class="modal-panel" role="dialog" aria-modal="true" data-panel-modal data-panel-modal-panel>
         <header class="modal-header">
           <h2>${titles[state.openPanel] ?? '面板'}</h2>
           <button type="button" data-close-panel>关闭</button>
@@ -705,7 +753,6 @@ function renderMainMap(state, disasterEffects) {
         showWorkStatus: true,
         disasterEffects,
       })}
-      ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
     </section>
   `;
 }
@@ -754,7 +801,7 @@ function renderPointModal(state, disasterEffects) {
 
   return `
     <div class="point-modal-backdrop" data-point-modal-backdrop>
-      <section class="point-modal" role="dialog" aria-modal="true" data-point-modal data-point-modal-panel>
+      <div class="point-modal point-modal-panel" role="dialog" aria-modal="true" data-point-modal data-point-modal-panel>
         <button class="point-modal-close" type="button" data-close-point-modal aria-label="关闭点子页面">×</button>
         <h2>地图点 ${point.id.slice(0, 6)}</h2>
         <p>点类型：${typeLabel}</p>
@@ -809,7 +856,7 @@ function renderPointModal(state, disasterEffects) {
         ` : ''}
         <h3>相邻地块工作情况</h3>
         <ul>${adjacentWork}</ul>
-      </section>
+      </div>
     </div>
   `;
 }
