@@ -24,6 +24,7 @@ import {
   isTechUnlocked,
   TECH_DEFINITIONS,
 } from './tech.js';
+import { formatNumber } from './uiFormatters.js';
 
 export function createGameUI(root, state) {
   if (!root) {
@@ -1972,10 +1973,6 @@ function renderTile(tile, size, label = '', isHighlighted = false, index = 0, op
       ${options.showWorkStatus && work ? `<small data-map-tile-label="${index}" data-map-tile-workers="${index}">${rule.name} ${work.workers}/3</small>` : ''}
     </div>
   `;
-}
-
-function formatNumber(value) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function roundResource(value) {
