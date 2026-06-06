@@ -24,7 +24,7 @@ import {
   isTechUnlocked,
   TECH_DEFINITIONS,
 } from './tech.js';
-import { formatNumber } from './uiFormatters.js';
+import { formatNumber, getTimerText } from './uiFormatters.js';
 
 export function createGameUI(root, state) {
   if (!root) {
@@ -474,14 +474,6 @@ function renderTopHud(state) {
       </div>
     </header>
   `;
-}
-
-function getTimerText(state) {
-  return state.isRunning
-    ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
-    : state.timeLeft < ERA_SECONDS
-      ? `${String(Math.ceil(state.timeLeft)).padStart(2, '0')}s`
-      : '准备阶段';
 }
 
 function renderEventWarningPanel(state, disasterEffects) {
