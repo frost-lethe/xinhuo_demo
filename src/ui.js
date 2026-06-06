@@ -24,6 +24,7 @@ import {
   isTechUnlocked,
   TECH_DEFINITIONS,
 } from './tech.js';
+import { setText } from './uiDomHelpers.js';
 import { formatNumber, getTimerText } from './uiFormatters.js';
 
 export function createGameUI(root, state) {
@@ -606,12 +607,6 @@ function updatePointModalDynamicFields(root, state) {
       `地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}`,
     );
   });
-}
-
-function setText(element, text) {
-  if (element && element.textContent !== text) {
-    element.textContent = text;
-  }
 }
 
 function renderRightActionRail() {
