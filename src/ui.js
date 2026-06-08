@@ -26,6 +26,7 @@ import {
 } from './tech.js';
 import { updateDynamicUI } from './uiDynamicUpdates.js';
 import { formatNumber, getTimerText } from './uiFormatters.js';
+import { closeAllModals, closePanelModal, closePointModal } from './uiModalState.js';
 
 export function createGameUI(root, state) {
   if (!root) {
@@ -421,37 +422,6 @@ function renderMainPage(root, state, render, startTimer) {
     });
   });
 
-}
-
-function closePointModal(state) {
-  state.openPointId = null;
-  if ('selectedPointId' in state) {
-    state.selectedPointId = null;
-  }
-  if ('activePointId' in state) {
-    state.activePointId = null;
-  }
-  if (state.openModal === 'point') {
-    state.openModal = null;
-  }
-}
-
-function closePanelModal(state) {
-  state.openPanel = null;
-  if (state.openModal === 'panel') {
-    state.openModal = null;
-  }
-}
-
-function closeAllModals(state) {
-  closePointModal(state);
-  closePanelModal(state);
-  if ('activeModal' in state) {
-    state.activeModal = null;
-  }
-  if ('openModal' in state) {
-    state.openModal = null;
-  }
 }
 
 function renderTopHud(state) {
