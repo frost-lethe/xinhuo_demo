@@ -1,6 +1,9 @@
 import { RESOURCE_LABELS, TERRAIN } from './constants.js';
 import { isTechUnlocked } from './tech.js';
 
+export const BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE = 0.05;
+export const WAREHOUSE_PROTECTION_CAP = 0.60;
+
 export const DISASTER_DESCRIPTIONS = Object.freeze({
   寒潮: '提高燃料压力。',
   干旱: '削弱食物生产或损失食物库存。',
@@ -28,6 +31,19 @@ export function getBuildingCount(state = null) {
   return 1
     + (state?.ordinarySettlementCount ?? 0)
     + (state?.warehouseCount ?? 0);
+}
+
+export function getWarehouseProtectionRate(state = null) {
+  const warehouseCount = Math.max(0, state?.warehouseCount ?? 0);
+  return Math.min(
+    WAREHOUSE_PROTECTION_CAP,
+    warehouseCount * BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE,
+  );
+}
+
+export function applyWarehouseProtectionToLoss(baseLoss, state = null) {
+  const protectionRate = getWarehouseProtectionRate(state);
+  return Math.max(0, baseLoss * (1 - protectionRate));
 }
 
 export function getEraDisasterEffects(mapType, era, state = null) {

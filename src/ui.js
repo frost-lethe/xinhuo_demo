@@ -14,7 +14,9 @@ import {
   getEventLogText,
   getBuildingCount,
   getMapDisasterProfile,
+  getWarehouseProtectionRate,
   getWorkEfficiencyMultiplier,
+  applyWarehouseProtectionToLoss,
 } from './disasters.js';
 import { getLegacyBonus, LEGACY_OPTIONS } from './legacy.js';
 import { countTerrains, generateMap } from './map.js';
@@ -807,7 +809,7 @@ function renderPointModal(state, disasterEffects) {
             <p>仓库</p>
             <p>影响范围来源：否</p>
             <p>资源上限贡献：食物20 / 燃料20 / 材料20</p>
-            <p>库存灾害损失减免：5%</p>
+            <p>库存保护：减少最终库存损失 5% / 座，总保护上限 60%。</p>
             <p>仓库不解锁相邻地块工作。</p>
           </div>
         ` : ''}
@@ -849,7 +851,9 @@ function renderTechPanel(state) {
 
 function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
-  const warehouseReduction = state.warehouseCount * 5;
+  const warehouseProtectionRate = getWarehouseProtectionRate(state);
+  const warehouseProtection = formatNumber(warehouseProtectionRate * 100);
+  const warehouseLossMultiplier = formatNumber((1 - warehouseProtectionRate) * 100);
   const nextInfluenceCost = getBuildingCost(state, getInfluenceUpgradeCost(state.influenceLevel + 1));
   const householdCost = getHouseholdGrowthCost(state);
   const householdCostNote = isTechUnlocked(state, 'agriculture') ? '农耕使增户成本降低。' : '';
@@ -872,7 +876,7 @@ function renderSettlementDevelopmentPanel(state) {
         <div data-settlement-buildings>建筑数 ${getBuildingCount(state)}</div>
         <div data-settlement-capacity>户容量 ${state.householdCapacity}</div>
         <div data-settlement-resources>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
-        <div data-settlement-storage-reduction>库存灾害减免 ${warehouseReduction}%</div>
+        <div data-settlement-storage-reduction>当前仓库保护 ${warehouseProtection}%，库存损失按 ${warehouseLossMultiplier}% 结算</div>
         <div data-settlement-households>当前户数 ${state.households}</div>
         <div data-settlement-idle>空闲户 ${state.idleHouseholds}</div>
       </div>
@@ -1106,28 +1110,29 @@ function settleEra(state) {
 
 function applyInventoryLosses(state, disasterEffects) {
   const lines = [];
-  const warehouseReduction = state.warehouseCount * 0.05;
+  const warehouseProtectionRate = getWarehouseProtectionRate(state);
 
   Object.entries(disasterEffects.inventoryLoss).forEach(([resource, rate]) => {
     if (rate <= 0) {
       return;
     }
 
-    const effectiveRate = Math.max(0, rate - warehouseReduction);
     const before = state.resources[resource];
-    const lost = Math.ceil(before * effectiveRate);
+    const baseLoss = before * rate;
+    const protectedLoss = applyWarehouseProtectionToLoss(baseLoss, state);
+    const lost = roundResource(Math.min(before, protectedLoss));
     const names = disasterEffects.inventoryNotes
       .filter((note) => note.resource === resource)
       .map((note) => note.name);
     const source = names.length > 0 ? `${[...new Set(names)].join('、')}造成` : '';
-    state.resources[resource] = Math.max(0, before - lost);
-    lines.push(`灾害库存损失：${source}${RESOURCE_LABELS[resource]}库存损失${formatNumber(rate * 100)}%。`);
+    state.resources[resource] = roundResource(Math.max(0, before - lost));
+    lines.push(`灾害基础库存损失：${source}${RESOURCE_LABELS[resource]}库存损失${formatNumber(rate * 100)}%，基础损失 ${formatNumber(baseLoss)}。`);
     if (state.warehouseCount > 0) {
-      lines.push(`仓库减免：仓库${state.warehouseCount}座，库存损失 -${formatNumber(warehouseReduction * 100)}%。`);
+      lines.push(`仓库保护：仓库${state.warehouseCount}座，减少最终库存损失 ${formatNumber(warehouseProtectionRate * 100)}%，库存损失按 ${formatNumber((1 - warehouseProtectionRate) * 100)}% 结算。`);
     }
     lines.push(lost > 0
-      ? `实际${RESOURCE_LABELS[resource]}损失：${lost}。`
-      : '仓库完全抵消了这项库存损失。');
+      ? `仓库保护后实际${RESOURCE_LABELS[resource]}损失：${formatNumber(lost)}。`
+      : `实际${RESOURCE_LABELS[resource]}损失：0。`);
   });
 
   return lines.length > 0 ? lines : ['本纪无库存灾害损失。'];
@@ -1347,7 +1352,7 @@ function buildWarehouse(state) {
     return;
   }
 
-  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少灾害库存损失5%。是否确认？')) {
+  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少最终灾害库存损失5%。是否确认？')) {
     return;
   }
 
@@ -1398,7 +1403,7 @@ function buildPointWarehouse(state, pointId) {
     return;
   }
 
-  if (!window.confirm(`建造仓库将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：三资源上限+20，并减少灾害库存损失5%。仓库不会扩展影响范围。是否确认？`)) {
+  if (!window.confirm(`建造仓库将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：三资源上限+20，并减少最终灾害库存损失5%。仓库不会扩展影响范围。是否确认？`)) {
     return;
   }
 
