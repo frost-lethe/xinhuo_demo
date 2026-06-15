@@ -2,6 +2,7 @@ import { MAX_ERA, RESOURCE_LABELS, TERRAIN_LABELS } from './constants.js';
 import {
   getBuildingCount,
   getEraDisasterEffects,
+  getWarehouseProtectionPerWarehouse,
   getWarehouseProtectionRate,
   getWorkEfficiencyMultiplier,
 } from './disasters.js';
@@ -96,6 +97,7 @@ function updateTechPanelDynamicFields(root, state) {
 }
 
 function updateSettlementPanelDynamicFields(root, state) {
+  const warehouseProtectionPerWarehouse = formatNumber(getWarehouseProtectionPerWarehouse(state) * 100);
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
   const warehouseProtection = formatNumber(warehouseProtectionRate * 100);
   const warehouseLossMultiplier = formatNumber((1 - warehouseProtectionRate) * 100);
@@ -108,7 +110,7 @@ function updateSettlementPanelDynamicFields(root, state) {
   setText(root.querySelector('[data-settlement-buildings]'), `建筑数 ${getBuildingCount(state)}`);
   setText(root.querySelector('[data-settlement-warehouses]'), `仓库数量 ${state.warehouseCount}`);
   setText(root.querySelector('[data-settlement-ordinary]'), `普通聚落数量 ${state.ordinarySettlementCount}`);
-  setText(root.querySelector('[data-settlement-storage-reduction]'), `当前仓库保护 ${warehouseProtection}%，库存损失按 ${warehouseLossMultiplier}% 结算`);
+  setText(root.querySelector('[data-settlement-storage-reduction]'), `仓库保护 每座${warehouseProtectionPerWarehouse}% / 当前${warehouseProtection}% / 上限60%，库存损失按 ${warehouseLossMultiplier}% 结算`);
 }
 
 function updatePointModalDynamicFields(root, state, dependencies) {

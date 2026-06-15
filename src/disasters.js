@@ -2,6 +2,7 @@ import { RESOURCE_LABELS, TERRAIN } from './constants.js';
 import { isTechUnlocked } from './tech.js';
 
 export const BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE = 0.05;
+export const STORAGE_WAREHOUSE_PROTECTION_BONUS = 0.02;
 export const WAREHOUSE_PROTECTION_CAP = 0.60;
 
 export const DISASTER_DESCRIPTIONS = Object.freeze({
@@ -37,8 +38,13 @@ export function getWarehouseProtectionRate(state = null) {
   const warehouseCount = Math.max(0, state?.warehouseCount ?? 0);
   return Math.min(
     WAREHOUSE_PROTECTION_CAP,
-    warehouseCount * BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE,
+    warehouseCount * getWarehouseProtectionPerWarehouse(state),
   );
+}
+
+export function getWarehouseProtectionPerWarehouse(state = null) {
+  return BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE
+    + (isTechUnlocked(state, 'storage') ? STORAGE_WAREHOUSE_PROTECTION_BONUS : 0);
 }
 
 export function applyWarehouseProtectionToLoss(baseLoss, state = null) {

@@ -25,6 +25,13 @@ export const TECH_DEFINITIONS = Object.freeze({
     prerequisite: 'ember',
     description: '食物上限 +20%。',
   },
+  storage: {
+    id: 'storage',
+    name: '仓储',
+    requirement: 120,
+    prerequisite: 'pottery',
+    description: '将陶器、粮囤与记账方式结合：食物上限 +25%，燃料上限 +15%，材料上限 +15%，每座仓库对最终库存损失的保护率 +2%。',
+  },
   bronze: {
     id: 'bronze',
     name: '青铜',

@@ -14,6 +14,7 @@ import {
   getEventLogText,
   getBuildingCount,
   getMapDisasterProfile,
+  getWarehouseProtectionPerWarehouse,
   getWarehouseProtectionRate,
   getWorkEfficiencyMultiplier,
   applyWarehouseProtectionToLoss,
@@ -809,7 +810,7 @@ function renderPointModal(state, disasterEffects) {
             <p>仓库</p>
             <p>影响范围来源：否</p>
             <p>资源上限贡献：食物20 / 燃料20 / 材料20</p>
-            <p>库存保护：减少最终库存损失 5% / 座，总保护上限 60%。</p>
+            <p>库存保护：每座仓库减少最终库存损失 ${formatNumber(getWarehouseProtectionPerWarehouse(state) * 100)}%，总保护上限 60%。</p>
             <p>仓库不解锁相邻地块工作。</p>
           </div>
         ` : ''}
@@ -851,6 +852,7 @@ function renderTechPanel(state) {
 
 function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
+  const warehouseProtectionPerWarehouse = formatNumber(getWarehouseProtectionPerWarehouse(state) * 100);
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
   const warehouseProtection = formatNumber(warehouseProtectionRate * 100);
   const warehouseLossMultiplier = formatNumber((1 - warehouseProtectionRate) * 100);
@@ -876,7 +878,7 @@ function renderSettlementDevelopmentPanel(state) {
         <div data-settlement-buildings>建筑数 ${getBuildingCount(state)}</div>
         <div data-settlement-capacity>户容量 ${state.householdCapacity}</div>
         <div data-settlement-resources>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
-        <div data-settlement-storage-reduction>当前仓库保护 ${warehouseProtection}%，库存损失按 ${warehouseLossMultiplier}% 结算</div>
+        <div data-settlement-storage-reduction>仓库保护 每座${warehouseProtectionPerWarehouse}% / 当前${warehouseProtection}% / 上限60%，库存损失按 ${warehouseLossMultiplier}% 结算</div>
         <div data-settlement-households>当前户数 ${state.households}</div>
         <div data-settlement-idle>空闲户 ${state.idleHouseholds}</div>
       </div>
@@ -1347,12 +1349,13 @@ function expandSettlement(state) {
 
 function buildWarehouse(state) {
   const cost = { food: 3, fuel: 5, material: 12 };
+  const warehouseProtectionPerWarehouse = formatNumber(getWarehouseProtectionPerWarehouse(state) * 100);
 
   if (!canAdjust(state) || !canAfford(state, cost)) {
     return;
   }
 
-  if (!window.confirm('建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并减少最终灾害库存损失5%。是否确认？')) {
+  if (!window.confirm(`建造仓库将消耗 食物3、燃料5、材料12。效果：三资源上限+20，并使每座仓库减少最终灾害库存损失${warehouseProtectionPerWarehouse}%。是否确认？`)) {
     return;
   }
 
@@ -1398,12 +1401,13 @@ function buildOrdinarySettlement(state, pointId) {
 
 function buildPointWarehouse(state, pointId) {
   const cost = getBuildingCost(state, { food: 3, fuel: 5, material: 12 });
+  const warehouseProtectionPerWarehouse = formatNumber(getWarehouseProtectionPerWarehouse(state) * 100);
 
   if (!pointId || !canAdjust(state) || !isPointBuildable(pointId, state) || !canAfford(state, cost)) {
     return;
   }
 
-  if (!window.confirm(`建造仓库将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：三资源上限+20，并减少最终灾害库存损失5%。仓库不会扩展影响范围。是否确认？`)) {
+  if (!window.confirm(`建造仓库将消耗 食物${cost.food}、燃料${cost.fuel}、材料${cost.material}。效果：三资源上限+20，并使每座仓库减少最终灾害库存损失${warehouseProtectionPerWarehouse}%。仓库不会扩展影响范围。是否确认？`)) {
     return;
   }
 
@@ -1447,12 +1451,16 @@ function ensureBaseResourceCaps(state) {
 
 function refreshResourceCaps(state) {
   ensureBaseResourceCaps(state);
-  const foodMultiplier = isTechUnlocked(state, 'pottery') ? 1.2 : 1;
+  const foodMultiplier = 1
+    + (isTechUnlocked(state, 'pottery') ? 0.2 : 0)
+    + (isTechUnlocked(state, 'storage') ? 0.25 : 0);
+  const fuelMultiplier = 1 + (isTechUnlocked(state, 'storage') ? 0.15 : 0);
+  const materialMultiplier = 1 + (isTechUnlocked(state, 'storage') ? 0.15 : 0);
 
   state.resourceCaps = {
     food: Math.ceil(state.baseResourceCaps.food * foodMultiplier),
-    fuel: state.baseResourceCaps.fuel,
-    material: state.baseResourceCaps.material,
+    fuel: Math.ceil(state.baseResourceCaps.fuel * fuelMultiplier),
+    material: Math.ceil(state.baseResourceCaps.material * materialMultiplier),
   };
 }
 
@@ -1491,7 +1499,7 @@ function advanceResearch(state, deltaSeconds) {
       unlockedAny = true;
       state.idleHouseholds += tech.workers;
       tech.workers = 0;
-      if (techId === 'pottery') {
+      if (techId === 'pottery' || techId === 'storage') {
         refreshResourceCaps(state);
       }
       state.eventLog.push(`${definition.name}研究完成。`);
