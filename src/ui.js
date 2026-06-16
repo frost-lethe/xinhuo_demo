@@ -38,6 +38,7 @@ export function createGameUI(root, state) {
     return;
   }
 
+  const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
   let timerId = null;
   let lastTickAt = 0;
 
@@ -49,6 +50,13 @@ export function createGameUI(root, state) {
   };
 
   const handleKeyboardEvent = (event) => {
+    if (debugEnabled && event.key === 'F9') {
+      event.preventDefault();
+      state.debugConsoleOpen = !state.debugConsoleOpen;
+      render();
+      return;
+    }
+
     if (event.key !== 'Escape') {
       return;
     }
@@ -83,7 +91,7 @@ export function createGameUI(root, state) {
     }
 
     if (state.currentPage === 'main') {
-      renderMainPage(root, state, render, startTimer);
+      renderMainPage(root, state, render, startTimer, debugEnabled);
       return;
     }
 
@@ -257,7 +265,7 @@ function renderCorePage(root, state, render) {
   });
 }
 
-function renderMainPage(root, state, render, startTimer) {
+function renderMainPage(root, state, render, startTimer, debugEnabled) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
 
   root.innerHTML = `
@@ -271,6 +279,7 @@ function renderMainPage(root, state, render, startTimer) {
       ${renderPanelModal(state, disasterEffects)}
     </main>
     ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
+    ${renderDebugConsole(state, debugEnabled)}
   `;
 
   root.querySelectorAll('[data-open-panel]').forEach((button) => {
@@ -427,6 +436,7 @@ function renderMainPage(root, state, render, startTimer) {
     });
   });
 
+  bindDebugConsoleControls(root, state, render, debugEnabled);
 }
 
 function renderTopHud(state) {
@@ -478,6 +488,104 @@ function renderRightActionRail() {
       <button class="action-rail-button" type="button" data-open-panel="work">工作分配</button>
     </nav>
   `;
+}
+
+function renderDebugConsole(state, debugEnabled) {
+  if (!debugEnabled || !state.debugConsoleOpen) {
+    return '';
+  }
+
+  const consoleStyle = 'position:fixed;right:16px;bottom:16px;z-index:2000;width:min(320px,calc(100vw - 32px));padding:12px;border:1px solid rgb(255 210 95 / 0.45);border-radius:8px;background:rgb(18 22 20 / 0.94);color:#fffdf7;box-shadow:0 16px 48px rgb(0 0 0 / 0.35);font-size:13px;pointer-events:auto;';
+  const headerStyle = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;';
+  const rowStyle = 'display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin:6px 0;';
+
+  return `
+    <aside class="debug-console" style="${consoleStyle}" data-debug-console>
+      <header style="${headerStyle}">
+        <strong>Debug Console / 上帝控制台</strong>
+        <button type="button" data-debug-close>关闭</button>
+      </header>
+      <div style="${rowStyle}">
+        <span>食物 ${formatNumber(state.resources.food)} / ${state.resourceCaps.food}</span>
+        <button type="button" data-debug-resource="food" data-debug-delta="-10" ${state.resources.food <= 0 ? 'disabled' : ''}>-10</button>
+        <button type="button" data-debug-resource="food" data-debug-delta="10" ${state.resources.food >= state.resourceCaps.food ? 'disabled' : ''}>+10</button>
+      </div>
+      <div style="${rowStyle}">
+        <span>燃料 ${formatNumber(state.resources.fuel)} / ${state.resourceCaps.fuel}</span>
+        <button type="button" data-debug-resource="fuel" data-debug-delta="-10" ${state.resources.fuel <= 0 ? 'disabled' : ''}>-10</button>
+        <button type="button" data-debug-resource="fuel" data-debug-delta="10" ${state.resources.fuel >= state.resourceCaps.fuel ? 'disabled' : ''}>+10</button>
+      </div>
+      <div style="${rowStyle}">
+        <span>材料 ${formatNumber(state.resources.material)} / ${state.resourceCaps.material}</span>
+        <button type="button" data-debug-resource="material" data-debug-delta="-10" ${state.resources.material <= 0 ? 'disabled' : ''}>-10</button>
+        <button type="button" data-debug-resource="material" data-debug-delta="10" ${state.resources.material >= state.resourceCaps.material ? 'disabled' : ''}>+10</button>
+      </div>
+      <div style="${rowStyle}">
+        <span>户数 ${state.households} / ${state.householdCapacity}，空闲 ${state.idleHouseholds}</span>
+        <button type="button" data-debug-households="-1" ${state.idleHouseholds <= 0 || state.households <= 0 ? 'disabled' : ''}>-1</button>
+        <button type="button" data-debug-households="1" ${state.households >= state.householdCapacity ? 'disabled' : ''}>+1</button>
+      </div>
+    </aside>
+  `;
+}
+
+function bindDebugConsoleControls(root, state, render, debugEnabled) {
+  if (!debugEnabled || !state.debugConsoleOpen) {
+    return;
+  }
+
+  root.querySelector('[data-debug-console]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
+  root.querySelector('[data-debug-close]')?.addEventListener('click', () => {
+    state.debugConsoleOpen = false;
+    render();
+  });
+
+  root.querySelectorAll('[data-debug-resource]').forEach((button) => {
+    button.addEventListener('click', () => {
+      adjustDebugResource(
+        state,
+        button.dataset.debugResource,
+        Number(button.dataset.debugDelta),
+      );
+      render();
+    });
+  });
+
+  root.querySelectorAll('[data-debug-households]').forEach((button) => {
+    button.addEventListener('click', () => {
+      adjustDebugHouseholds(state, Number(button.dataset.debugHouseholds));
+      render();
+    });
+  });
+}
+
+function adjustDebugResource(state, resource, delta) {
+  if (!['food', 'fuel', 'material'].includes(resource) || !Number.isFinite(delta)) {
+    return;
+  }
+
+  const nextValue = Math.min(
+    state.resourceCaps[resource],
+    Math.max(0, state.resources[resource] + delta),
+  );
+  state.resources[resource] = roundResource(nextValue);
+}
+
+function adjustDebugHouseholds(state, delta) {
+  if (delta > 0 && state.households < state.householdCapacity) {
+    state.households += 1;
+    state.idleHouseholds += 1;
+    updateHighestHouseholds(state);
+    return;
+  }
+
+  if (delta < 0 && state.idleHouseholds > 0 && state.households > 0) {
+    state.households -= 1;
+    state.idleHouseholds -= 1;
+  }
 }
 
 function renderPanelModal(state, disasterEffects) {
