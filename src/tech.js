@@ -46,6 +46,13 @@ export const TECH_DEFINITIONS = Object.freeze({
     prerequisite: 'stone',
     description: '科研效率 +20%，灭亡后遗产点 +1。',
   },
+  calendar: {
+    id: 'calendar',
+    name: '历法',
+    requirement: 130,
+    prerequisite: 'writing',
+    description: '以文字记录天象、寒暑与洪旱的循环：灾害预警更明确，普通灾害最终代价 -10%，终末灾害最终代价 -5%。',
+  },
 });
 
 export function createInitialTechState() {

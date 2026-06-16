@@ -18,6 +18,8 @@ import {
   getWarehouseProtectionRate,
   getWorkEfficiencyMultiplier,
   applyWarehouseProtectionToLoss,
+  getCalendarDisasterReductionRate,
+  applyCalendarReductionToDisasterCost,
 } from './disasters.js';
 import { getLegacyBonus, LEGACY_OPTIONS } from './legacy.js';
 import { countTerrains, generateMap } from './map.js';
@@ -1075,7 +1077,10 @@ function settleEra(state) {
   const production = state.productionThisEra || { food: 0, fuel: 0, material: 0 };
   const beforeHouseholds = state.households;
   const foodNeed = 1;
-  const fuelNeed = 0.5 * disasterEffects.fuelMultiplier + disasterEffects.extraFuelPerHousehold;
+  const baseFuelNeed = 0.5;
+  const disasterFuelNeed = baseFuelNeed * (disasterEffects.fuelMultiplier - 1) + disasterEffects.extraFuelPerHousehold;
+  const adjustedDisasterFuelNeed = applyCalendarReductionToDisasterCost(disasterFuelNeed, state, disasterEffects);
+  const fuelNeed = baseFuelNeed + adjustedDisasterFuelNeed;
   const inventoryLossLines = applyInventoryLosses(state, disasterEffects);
   const foodCanSupport = Math.floor(state.resources.food / foodNeed);
   const fuelCanSupport = Math.floor(state.resources.fuel / fuelNeed);
@@ -1095,7 +1100,7 @@ function settleEra(state) {
     `本纪资源产出：食物 +${formatNumber(production.food)}，燃料 +${formatNumber(production.fuel)}，材料 +${formatNumber(production.material)}。`,
     ...createEfficiencySettlementLines(disasterEffects),
     ...inventoryLossLines,
-    ...createFuelSettlementLines(disasterEffects),
+    ...createFuelSettlementLines(disasterEffects, state),
     `食物/燃料供养计算：食物可供养 ${foodCanSupport} 户，燃料可供养 ${fuelCanSupport} 户，实际供养 ${supported}/${beforeHouseholds} 户。`,
     `消耗：食物 ${formatNumber(consumedFood)}，燃料 ${formatNumber(consumedFuel)}。`,
     materialResult.line,
@@ -1113,6 +1118,7 @@ function settleEra(state) {
 function applyInventoryLosses(state, disasterEffects) {
   const lines = [];
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
+  const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
 
   Object.entries(disasterEffects.inventoryLoss).forEach(([resource, rate]) => {
     if (rate <= 0) {
@@ -1122,7 +1128,8 @@ function applyInventoryLosses(state, disasterEffects) {
     const before = state.resources[resource];
     const baseLoss = before * rate;
     const protectedLoss = applyWarehouseProtectionToLoss(baseLoss, state);
-    const lost = roundResource(Math.min(before, protectedLoss));
+    const calendarAdjustedLoss = applyCalendarReductionToDisasterCost(protectedLoss, state, disasterEffects);
+    const lost = roundResource(Math.min(before, calendarAdjustedLoss));
     const names = disasterEffects.inventoryNotes
       .filter((note) => note.resource === resource)
       .map((note) => note.name);
@@ -1132,8 +1139,11 @@ function applyInventoryLosses(state, disasterEffects) {
     if (state.warehouseCount > 0) {
       lines.push(`仓库保护：仓库${state.warehouseCount}座，减少最终库存损失 ${formatNumber(warehouseProtectionRate * 100)}%，库存损失按 ${formatNumber((1 - warehouseProtectionRate) * 100)}% 结算。`);
     }
+    if (calendarReductionRate > 0) {
+      lines.push(`历法准备：最终库存损失 -${formatNumber(calendarReductionRate * 100)}%。`);
+    }
     lines.push(lost > 0
-      ? `仓库保护后实际${RESOURCE_LABELS[resource]}损失：${formatNumber(lost)}。`
+      ? `最终实际${RESOURCE_LABELS[resource]}损失：${formatNumber(lost)}。`
       : `实际${RESOURCE_LABELS[resource]}损失：0。`);
   });
 
@@ -1150,8 +1160,10 @@ function createEfficiencySettlementLines(disasterEffects) {
   ));
 }
 
-function createFuelSettlementLines(disasterEffects) {
+function createFuelSettlementLines(disasterEffects, state) {
   const lines = [];
+  const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
+  const disasterFuelNeed = 0.5 * (disasterEffects.fuelMultiplier - 1) + disasterEffects.extraFuelPerHousehold;
 
   if (disasterEffects.fuelMultiplier > 1) {
     lines.push(`灾害额外需求：基础燃料消耗 +${formatNumber((disasterEffects.fuelMultiplier - 1) * 100)}%。`);
@@ -1159,6 +1171,10 @@ function createFuelSettlementLines(disasterEffects) {
 
   if (disasterEffects.extraFuelPerHousehold > 0) {
     lines.push(`灾害额外需求：每户燃料需求 +${formatNumber(disasterEffects.extraFuelPerHousehold)}。`);
+  }
+
+  if (calendarReductionRate > 0 && disasterFuelNeed > 0) {
+    lines.push(`历法准备：最终燃料灾害需求 -${formatNumber(calendarReductionRate * 100)}%。`);
   }
 
   disasterEffects.techNotes.forEach((note) => {
@@ -1169,22 +1185,27 @@ function createFuelSettlementLines(disasterEffects) {
 }
 
 function applyMaterialDemand(state, disasterEffects) {
-  const demand = disasterEffects.materialDemand;
+  const baseDemand = disasterEffects.materialDemand;
+  const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
 
-  if (demand <= 0) {
+  if (baseDemand <= 0) {
     return {
       deaths: 0,
       line: '本纪无额外材料需求。',
     };
   }
 
+  const demand = roundResource(applyCalendarReductionToDisasterCost(baseDemand, state, disasterEffects));
   const shortage = Math.max(0, demand - state.resources.material);
+  const calendarText = calendarReductionRate > 0
+    ? `历法准备后实际需求 ${formatNumber(demand)}，最终灾害代价 -${formatNumber(calendarReductionRate * 100)}%。`
+    : '';
 
   if (shortage <= 0) {
     state.resources.material = roundResource(state.resources.material - demand);
     return {
       deaths: 0,
-      line: `灾害材料需求：需要材料 ${demand}，材料充足。`,
+      line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}材料充足。`,
     };
   }
 
@@ -1194,7 +1215,7 @@ function applyMaterialDemand(state, disasterEffects) {
 
   return {
     deaths: actualDeaths,
-    line: `灾害材料需求：需要材料 ${demand}，缺口 ${formatNumber(shortage)}，死亡 ${actualDeaths} 户。`,
+    line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}缺口 ${formatNumber(shortage)}，死亡 ${actualDeaths} 户。`,
   };
 }
 

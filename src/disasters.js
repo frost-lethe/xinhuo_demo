@@ -4,6 +4,8 @@ import { isTechUnlocked } from './tech.js';
 export const BASE_WAREHOUSE_PROTECTION_PER_WAREHOUSE = 0.05;
 export const STORAGE_WAREHOUSE_PROTECTION_BONUS = 0.02;
 export const WAREHOUSE_PROTECTION_CAP = 0.60;
+export const CALENDAR_ORDINARY_DISASTER_REDUCTION = 0.10;
+export const CALENDAR_TERMINAL_DISASTER_REDUCTION = 0.05;
 
 export const DISASTER_DESCRIPTIONS = Object.freeze({
   寒潮: '提高燃料压力。',
@@ -52,6 +54,25 @@ export function applyWarehouseProtectionToLoss(baseLoss, state = null) {
   return Math.max(0, baseLoss * (1 - protectionRate));
 }
 
+export function isTerminalDisaster(effects = null) {
+  return Boolean(effects?.disasterNames?.includes('终末失序'));
+}
+
+export function getCalendarDisasterReductionRate(state = null, effects = null) {
+  if (!isTechUnlocked(state, 'calendar')) {
+    return 0;
+  }
+
+  return isTerminalDisaster(effects)
+    ? CALENDAR_TERMINAL_DISASTER_REDUCTION
+    : CALENDAR_ORDINARY_DISASTER_REDUCTION;
+}
+
+export function applyCalendarReductionToDisasterCost(cost, state = null, effects = null) {
+  const reductionRate = getCalendarDisasterReductionRate(state, effects);
+  return Math.max(0, cost * (1 - reductionRate));
+}
+
 export function getEraDisasterEffects(mapType, era, state = null) {
   const effects = {
     disasterNames: [],
@@ -72,7 +93,7 @@ export function getEraDisasterEffects(mapType, era, state = null) {
   applyMapDisaster(effects, mapType, era, state);
   applyEndgameDisorder(effects, era, state);
   applyTechModifiers(effects, state);
-  effects.warning = createWarning(effects);
+  effects.warning = createWarning(effects, state);
 
   return effects;
 }
@@ -156,7 +177,9 @@ export function getEventLogText(state, second) {
   const techText = getTechText(state);
   let text = null;
 
-  if (currentCategory) {
+  if (isTechUnlocked(state, 'calendar') && (currentCategory || (second === 40 && nextCategory))) {
+    text = getCalendarEventText(currentCategory ?? nextCategory, currentCategory ? 'current' : 'next');
+  } else if (currentCategory) {
     text = pick(EVENT_TEXTS.active[currentCategory]);
   } else if (second === 40 && nextCategory) {
     text = pick(EVENT_TEXTS.warning[nextCategory]);
@@ -339,9 +362,13 @@ function addMaterialDemand(effects, name, amount, note) {
   effects.notes.push(`${name}：${note}`);
 }
 
-function createWarning(effects) {
+function createWarning(effects, state = null) {
   if (effects.notes.length === 0) {
     return '本纪灾害：无。';
+  }
+
+  if (isTechUnlocked(state, 'calendar')) {
+    return `历法预警：${getCalendarWarningText(effects)} ${effects.notes.join(' ')}`;
   }
 
   if (effects.disasterNames.includes('终末失序')) {
@@ -349,6 +376,48 @@ function createWarning(effects) {
   }
 
   return `本纪灾害：${effects.disasterNames.join('、')}。${effects.notes.join(' ')}`;
+}
+
+function getCalendarWarningText(effects) {
+  if (isTerminalDisaster(effects)) {
+    return '旧年的刻痕与星象吻合，终末失序会让全部储备承压。';
+  }
+
+  if (effects.materialDemand > 0) {
+    return '历法记录显示，材料储备需要提前准备。';
+  }
+
+  const lossResources = Object.entries(effects.inventoryLoss)
+    .filter(([, rate]) => rate > 0)
+    .map(([resource]) => RESOURCE_LABELS[resource]);
+
+  if (lossResources.length > 0) {
+    return `历法记录显示，下一轮灾害更可能冲击${lossResources.join('、')}储备。`;
+  }
+
+  if (effects.fuelMultiplier > 1 || effects.extraFuelPerHousehold > 0) {
+    return '族中掌历者推算，寒暑失序将优先考验燃料。';
+  }
+
+  if (effects.efficiency.food < 1 || effects.efficiency.all < 1) {
+    return '历法提示，食物生产将受到明确压力。';
+  }
+
+  return '历法提示：这不是偶然的风声，而是一次明确的灾前征兆。';
+}
+
+function getCalendarEventText(category, timing) {
+  const timingText = timing === 'next' ? '下一纪' : '本纪';
+  const texts = {
+    寒潮: `历法记录显示，${timingText}寒暑失序将优先考验燃料。`,
+    干旱: `历法记录显示，${timingText}干旱更可能冲击食物储备。`,
+    兽群: `历法记录显示，${timingText}外部冲击需要提前准备材料。`,
+    洪水: `旧年的水痕与星象吻合，${timingText}洪水会威胁库存与材料。`,
+    地震: `族中掌历者推算，${timingText}地震将考验材料储备。`,
+    终末失序: `历法提示：${timingText}终末失序不是偶然风声，全部储备都需要提前准备。`,
+  };
+
+  return texts[category] ?? '历法提示：这不是偶然的风声，而是一次明确的灾前征兆。';
 }
 
 function pick(items) {
