@@ -1,4 +1,12 @@
-import { ERA_SECONDS, MAX_ERA, RESOURCE_KEYS, TERRAIN, WORK_RULES } from './constants.js';
+import {
+  ERA_SECONDS,
+  MAX_ERA,
+  RESOURCE_KEYS,
+  TERRAIN,
+  WORKERS_PER_TILE_CAP,
+  WORK_PROGRESS_PER_WORKER_PER_SECOND,
+  WORK_RULES,
+} from './constants.js';
 import { getEraDisasterEffects } from './disasters.js';
 
 export function prepareGeneration(state, mapData) {
@@ -62,7 +70,7 @@ export function setSpeed(state, speed) {
 export function assignWorker(state, workIndex) {
   const work = state.assignedWorkers[workIndex];
 
-  if (!work || state.idleHouseholds <= 0 || work.workers >= 3 || state.isRunning) {
+  if (!work || state.idleHouseholds <= 0 || work.workers >= WORKERS_PER_TILE_CAP || state.isRunning) {
     return;
   }
 
@@ -143,7 +151,7 @@ function produceResources(state, deltaSeconds) {
 
     const rule = WORK_RULES[work.terrain];
     const resourceMultiplier = effects.efficiency[rule.resource] ?? 1;
-    work.progress += work.workers * deltaSeconds * effects.efficiency.all * resourceMultiplier;
+    work.progress += work.workers * WORK_PROGRESS_PER_WORKER_PER_SECOND * deltaSeconds * effects.efficiency.all * resourceMultiplier;
 
     while (work.progress >= rule.progressNeeded) {
       work.progress -= rule.progressNeeded;

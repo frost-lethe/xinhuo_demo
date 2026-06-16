@@ -7,6 +7,8 @@ import {
   RESOURCE_LABELS,
   TERRAIN,
   TERRAIN_LABELS,
+  WORKERS_PER_TILE_CAP,
+  WORK_PROGRESS_PER_WORKER_PER_SECOND,
 } from './constants.js';
 import {
   DISASTER_DESCRIPTIONS,
@@ -881,7 +883,7 @@ function renderPointModal(state, disasterEffects) {
       return `
         <li data-point-work-progress="${tileIndex}">
           地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：
-          ${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}
+          ${rule.name}，工人 ${work?.workers ?? 0}/${WORKERS_PER_TILE_CAP}，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}
         </li>
       `;
     })
@@ -1043,7 +1045,7 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
   const rule = getWorkRule(state, work);
   const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
   const seconds = work.workers > 0
-    ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
+    ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * WORK_PROGRESS_PER_WORKER_PER_SECOND * efficiency))
     : null;
   const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
 
@@ -1052,13 +1054,13 @@ function renderWorkCard(state, work, index, isRunning, disasterEffects) {
       <h2>${TERRAIN_LABELS[work.terrain]}</h2>
       <p data-work-current-job="${work.tileIndex}">当前工作：${rule.name}</p>
       <p data-work-output="${work.tileIndex}">产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}</p>
-      <p data-work-workers="${work.tileIndex}">已分配户数：${work.workers} / 3</p>
+      <p data-work-workers="${work.tileIndex}">已分配户数：${work.workers} / ${WORKERS_PER_TILE_CAP}</p>
       <p>效率：${formatNumber(efficiency * 100)}%</p>
       <p data-work-rate="${work.tileIndex}">${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}</p>
       <div class="progress-bar"><span data-work-progress="${work.tileIndex}" style="width: ${progressPercent}%"></span></div>
       <div class="worker-buttons">
         <button type="button" data-unassign="${index}" ${work.workers <= 0 || isRunning ? 'disabled' : ''}>-</button>
-        <button type="button" data-assign="${index}" ${work.workers >= 3 || isRunning ? 'disabled' : ''}>+</button>
+        <button type="button" data-assign="${index}" ${work.workers >= WORKERS_PER_TILE_CAP || state.idleHouseholds <= 0 || isRunning ? 'disabled' : ''}>+</button>
       </div>
       ${renderJobSwitchControl(state, work, index)}
     </article>
@@ -1146,7 +1148,7 @@ function produceResources(state, deltaSeconds) {
     }
 
     const rule = getWorkRule(state, work);
-    work.progress += work.workers * deltaSeconds * getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
+    work.progress += work.workers * WORK_PROGRESS_PER_WORKER_PER_SECOND * deltaSeconds * getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
 
     while (work.progress >= rule.progressNeeded) {
       work.progress -= rule.progressNeeded;
@@ -1393,7 +1395,7 @@ function removeDeadHouseholds(state, deaths) {
 function assignWorker(state, index) {
   const work = state.assignedWorkers[index];
 
-  if (!canAdjust(state) || !work || state.idleHouseholds <= 0 || work.workers >= 3) {
+  if (!canAdjust(state) || !work || state.idleHouseholds <= 0 || work.workers >= WORKERS_PER_TILE_CAP) {
     return;
   }
 
@@ -2002,7 +2004,7 @@ function renderTile(tile, size, label = '', isHighlighted = false, index = 0, op
     <div class="hex ${tile.terrain} ${size} ${isHighlighted ? 'is-highlighted' : ''} ${work?.workers > 0 ? 'has-workers' : ''}" style="left: ${tile.x}%; top: ${tile.y}%;">
       ${options.showWorkStatus ? `<span class="tile-progress-ring" data-map-tile-progress="${index}" style="--progress: ${progressPercent}%;"></span>` : ''}
       <span>${label || TERRAIN_LABELS[tile.terrain]}</span>
-      ${options.showWorkStatus && work ? `<small data-map-tile-label="${index}" data-map-tile-workers="${index}">${rule.name} ${work.workers}/3</small>` : ''}
+      ${options.showWorkStatus && work ? `<small data-map-tile-label="${index}" data-map-tile-workers="${index}">${rule.name} ${work.workers}/${WORKERS_PER_TILE_CAP}</small>` : ''}
     </div>
   `;
 }

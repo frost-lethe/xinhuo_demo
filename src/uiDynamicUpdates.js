@@ -1,4 +1,10 @@
-import { MAX_ERA, RESOURCE_LABELS, TERRAIN_LABELS } from './constants.js';
+import {
+  MAX_ERA,
+  RESOURCE_LABELS,
+  TERRAIN_LABELS,
+  WORKERS_PER_TILE_CAP,
+  WORK_PROGRESS_PER_WORKER_PER_SECOND,
+} from './constants.js';
 import {
   getBuildingCount,
   getEraDisasterEffects,
@@ -44,7 +50,7 @@ function updateMapDynamicFields(root, state, dependencies) {
     const ring = root.querySelector(`[data-map-tile-progress="${work.tileIndex}"]`);
 
     ring?.style.setProperty('--progress', `${progressPercent}%`);
-    setText(root.querySelector(`[data-map-tile-label="${work.tileIndex}"]`), `${rule.name} ${work.workers}/3`);
+    setText(root.querySelector(`[data-map-tile-label="${work.tileIndex}"]`), `${rule.name} ${work.workers}/${WORKERS_PER_TILE_CAP}`);
   });
 }
 
@@ -69,14 +75,14 @@ function updateWorkPanelDynamicFields(root, state, disasterEffects, dependencies
     const rule = dependencies.getWorkRule(state, work);
     const efficiency = getWorkEfficiencyMultiplier(disasterEffects, work.terrain);
     const seconds = work.workers > 0
-      ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * efficiency))
+      ? (Math.max(0, rule.progressNeeded - work.progress) / (work.workers * WORK_PROGRESS_PER_WORKER_PER_SECOND * efficiency))
       : null;
     const progressPercent = Math.min(100, (work.progress / rule.progressNeeded) * 100);
     const tileIndex = work.tileIndex;
 
     setText(root.querySelector(`[data-work-current-job="${tileIndex}"]`), `当前工作：${rule.name}`);
     setText(root.querySelector(`[data-work-output="${tileIndex}"]`), `产出：${RESOURCE_LABELS[rule.resource]} +${rule.amount}`);
-    setText(root.querySelector(`[data-work-workers="${tileIndex}"]`), `已分配户数：${work.workers} / 3`);
+    setText(root.querySelector(`[data-work-workers="${tileIndex}"]`), `已分配户数：${work.workers} / ${WORKERS_PER_TILE_CAP}`);
     setText(root.querySelector(`[data-work-rate="${tileIndex}"]`), `${RESOURCE_LABELS[rule.resource]} +${rule.amount} / ${seconds ? `${formatNumber(seconds)}秒` : '未分配'}`);
     root.querySelector(`[data-work-progress="${tileIndex}"]`)?.style.setProperty('width', `${progressPercent}%`);
   });
@@ -128,7 +134,7 @@ function updatePointModalDynamicFields(root, state, dependencies) {
     const rule = work ? dependencies.getWorkRule(state, work) : dependencies.getWorkRule(state, { terrain: tile.terrain });
     setText(
       root.querySelector(`[data-point-work-progress="${tileIndex}"]`),
-      `地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：${rule.name}，工人 ${work?.workers ?? 0}/3，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}`,
+      `地块${tileId} ${TERRAIN_LABELS[tile.terrain]}：${rule.name}，工人 ${work?.workers ?? 0}/${WORKERS_PER_TILE_CAP}，进度 ${formatNumber(work?.progress ?? 0)}/${rule.progressNeeded}`,
     );
   });
 }

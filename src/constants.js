@@ -6,6 +6,8 @@ export const INITIAL_ERA = 1;
 export const INITIAL_HOUSEHOLDS = 4;
 export const INITIAL_HOUSEHOLD_CAPACITY = 8;
 export const BUILDING_COUNT_P0 = 1;
+export const WORKERS_PER_TILE_CAP = 5;
+export const WORK_PROGRESS_PER_WORKER_PER_SECOND = 0.6;
 
 export const RESOURCE_KEYS = ['food', 'fuel', 'material'];
 
