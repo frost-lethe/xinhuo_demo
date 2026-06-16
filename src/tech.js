@@ -39,6 +39,13 @@ export const TECH_DEFINITIONS = Object.freeze({
     prerequisite: 'stone',
     description: '解锁山地采石，建设成本 -10%。',
   },
+  iron: {
+    id: 'iron',
+    name: '铁器',
+    requirement: 150,
+    prerequisite: 'bronze',
+    description: '更坚硬的工具与武备让建设折扣提升到 20%，山地采石产出 +1。',
+  },
   writing: {
     id: 'writing',
     name: '文字',

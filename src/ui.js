@@ -964,9 +964,10 @@ function renderJobSwitchControl(state, work, index) {
     .map((job) => {
       const unlocked = !job.requiredTech || isTechUnlocked(state, job.requiredTech);
       const techName = job.requiredTech ? TECH_DEFINITIONS[job.requiredTech].name : '';
+      const previewRule = getWorkRule(state, { terrain: work.terrain, jobId: job.id });
 
       if (job.id === currentJobId) {
-        return `<p>${job.name}：${RESOURCE_LABELS[job.resource]} +${job.amount} / ${job.progressNeeded}（当前）</p>`;
+        return `<p>${previewRule.name}：${RESOURCE_LABELS[previewRule.resource]} +${previewRule.amount} / ${previewRule.progressNeeded}（当前）</p>`;
       }
 
       if (!unlocked) {
@@ -1341,12 +1342,16 @@ function getHouseholdGrowthCost(state) {
 }
 
 function getBuildingCost(state, baseCost) {
-  const multiplier = isTechUnlocked(state, 'bronze') ? 0.9 : 1;
+  const multiplier = isTechUnlocked(state, 'iron')
+    ? 0.8
+    : isTechUnlocked(state, 'bronze')
+      ? 0.9
+      : 1;
 
   return Object.fromEntries(
     Object.entries(baseCost).map(([resource, amount]) => [
       resource,
-      Math.ceil(amount * multiplier),
+      amount <= 0 ? 0 : Math.max(1, Math.ceil(amount * multiplier)),
     ]),
   );
 }
@@ -1540,6 +1545,13 @@ function getWorkRule(state, work) {
   }
 
   if (jobId === 'stone_gathering' && isTechUnlocked(state, 'stone')) {
+    return {
+      ...rule,
+      amount: rule.amount + 1,
+    };
+  }
+
+  if (jobId === 'quarrying' && isTechUnlocked(state, 'iron')) {
     return {
       ...rule,
       amount: rule.amount + 1,
