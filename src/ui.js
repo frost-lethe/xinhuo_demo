@@ -33,6 +33,8 @@ import { updateDynamicUI } from './uiDynamicUpdates.js';
 import { formatNumber, getTimerText } from './uiFormatters.js';
 import { closeAllModals, closePanelModal, closePointModal } from './uiModalState.js';
 
+const BUILDING_MAINTENANCE_MATERIAL_PER_BUILDING = 1;
+
 export function createGameUI(root, state) {
   if (!root) {
     return;
@@ -962,6 +964,7 @@ function renderTechPanel(state) {
 
 function renderSettlementDevelopmentPanel(state) {
   const canAct = !state.isRunning;
+  const buildingMaintenanceCost = getBuildingMaintenanceCost(state);
   const warehouseProtectionPerWarehouse = formatNumber(getWarehouseProtectionPerWarehouse(state) * 100);
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
   const warehouseProtection = formatNumber(warehouseProtectionRate * 100);
@@ -986,6 +989,7 @@ function renderSettlementDevelopmentPanel(state) {
         <div data-settlement-warehouses>仓库数量 ${state.warehouseCount}</div>
         <div>当前可建设点 ${getBuildablePoints(state).length}</div>
         <div data-settlement-buildings>建筑数 ${getBuildingCount(state)}</div>
+        <div data-settlement-maintenance>建筑维护 材料-${buildingMaintenanceCost} / 纪</div>
         <div data-settlement-capacity>户容量 ${state.householdCapacity}</div>
         <div data-settlement-resources>资源上限 食物${state.resourceCaps.food} / 燃料${state.resourceCaps.fuel} / 材料${state.resourceCaps.material}</div>
         <div data-settlement-storage-reduction>仓库保护 每座${warehouseProtectionPerWarehouse}% / 当前${warehouseProtection}% / 上限60%，库存损失按 ${warehouseLossMultiplier}% 结算</div>
@@ -1190,6 +1194,7 @@ function settleEra(state) {
   const disasterFuelNeed = baseFuelNeed * (disasterEffects.fuelMultiplier - 1) + disasterEffects.extraFuelPerHousehold;
   const adjustedDisasterFuelNeed = applyCalendarReductionToDisasterCost(disasterFuelNeed, state, disasterEffects);
   const fuelNeed = baseFuelNeed + adjustedDisasterFuelNeed;
+  const maintenanceResult = applyBuildingMaintenance(state);
   const inventoryLossLines = applyInventoryLosses(state, disasterEffects);
   const foodCanSupport = Math.floor(state.resources.food / foodNeed);
   const fuelCanSupport = Math.floor(state.resources.fuel / fuelNeed);
@@ -1207,6 +1212,7 @@ function settleEra(state) {
 
   return [
     `本纪资源产出：食物 +${formatNumber(production.food)}，燃料 +${formatNumber(production.fuel)}，材料 +${formatNumber(production.material)}。`,
+    createBuildingMaintenanceLine(maintenanceResult),
     ...createEfficiencySettlementLines(disasterEffects),
     ...inventoryLossLines,
     ...createFuelSettlementLines(disasterEffects, state),
@@ -1222,6 +1228,35 @@ function settleEra(state) {
         ? '最终判定：文明撑过了第十五纪。'
         : `最终判定：文明存续，可以进入第${state.era + 1}纪。`,
   ];
+}
+
+function getBuildingMaintenanceCost(state) {
+  return getBuildingCount(state) * BUILDING_MAINTENANCE_MATERIAL_PER_BUILDING;
+}
+
+function applyBuildingMaintenance(state) {
+  const buildingCount = getBuildingCount(state);
+  const required = getBuildingMaintenanceCost(state);
+  const available = state.resources.material;
+  const paid = Math.min(available, required);
+  const shortage = Math.max(0, required - paid);
+
+  state.resources.material = roundResource(Math.max(0, available - paid));
+
+  return {
+    buildingCount,
+    required,
+    paid,
+    shortage,
+  };
+}
+
+function createBuildingMaintenanceLine(result) {
+  if (result.shortage > 0) {
+    return `建筑维护：${result.buildingCount} 座建筑需要 ${result.required} 材料，实际消耗 ${formatNumber(result.paid)}，短缺 ${formatNumber(result.shortage)}。`;
+  }
+
+  return `建筑维护：${result.buildingCount} 座建筑消耗 ${formatNumber(result.paid)} 材料。`;
 }
 
 function applyInventoryLosses(state, disasterEffects) {
