@@ -57,6 +57,8 @@ export function createInitialState() {
     techs: createInitialTechState(),
     eventLog: [],
     lastEventText: null,
+    disasterPlan: null,
+    scheduledDisaster: null,
     isRunning: false,
     timeLeft: ERA_SECONDS,
     speed: 1,

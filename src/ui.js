@@ -2,7 +2,6 @@ import {
   DEFAULT_JOBS,
   ERA_SECONDS,
   JOB_DEFINITIONS,
-  MAP_TYPES,
   MAX_ERA,
   RESOURCE_LABELS,
   TERRAIN,
@@ -11,17 +10,19 @@ import {
   WORK_PROGRESS_PER_WORKER_PER_SECOND,
 } from './constants.js';
 import {
-  DISASTER_DESCRIPTIONS,
   getEraDisasterEffects,
   getEventLogText,
   getBuildingCount,
-  getMapDisasterProfile,
   getWarehouseProtectionPerWarehouse,
   getWarehouseProtectionRate,
   getWorkEfficiencyMultiplier,
   applyWarehouseProtectionToLoss,
+  isTerminalDisaster,
   getCalendarDisasterReductionRate,
   applyCalendarReductionToDisasterCost,
+  prepareDisasterPlanForState,
+  ensureScheduledDisasterForEra,
+  prepareScheduledDisasterForEra,
 } from './disasters.js';
 import { getLegacyBonus, LEGACY_OPTIONS } from './legacy.js';
 import { countTerrains, generateMap } from './map.js';
@@ -179,8 +180,6 @@ function renderStartPage(root, state, render) {
 
 function renderMapPage(root, state, render) {
   const counts = countTerrains(state.tiles);
-  const mapConfig = MAP_TYPES[state.mapType];
-  const disasterProfile = getMapDisasterProfile(state.mapType);
 
   root.innerHTML = `
     <main class="app-shell">
@@ -191,14 +190,14 @@ function renderMapPage(root, state, render) {
           <div>草原 ${counts.grassland}</div>
           <div>森林 ${counts.forest}</div>
           <div>山地 ${counts.mountain}</div>
-          <div>${mapConfig.earlyDisaster}</div>
-          <div>${mapConfig.midDisaster}</div>
+          <div>第一阶段：第4-5纪</div>
+          <div>第二阶段：第8-10纪</div>
         </div>
         <div class="disaster-overview">
           <h2>灾害介绍</h2>
-          <p>第4-5纪灾害：${disasterProfile.early}。${DISASTER_DESCRIPTIONS[disasterProfile.early]}</p>
-          <p>第8-10纪灾害：${disasterProfile.mid}。${DISASTER_DESCRIPTIONS[disasterProfile.mid]}</p>
-          <p>第12-15纪：终末失序。${DISASTER_DESCRIPTIONS.终末失序}</p>
+          <p>本局会在地图生成时形成一条灾难主题，地图类型会影响主题倾向，但并不完全固定。</p>
+          <p>第4-5纪出现第一阶段灾难，第8-10纪进入第二阶段灾难。</p>
+          <p>第12-15纪进入固定的终末失序。同一纪内，预警与结算会读取同一个已排定灾害。</p>
         </div>
         ${renderIslandMap(state, { size: 'mini' })}
         <button class="primary-action" type="button" data-action="core">进入选址</button>
@@ -417,10 +416,12 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   });
 
   root.querySelector('[data-action="start-era"]').addEventListener('click', () => {
+    ensureScheduledDisasterForEra(state);
+    const startDisasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
     state.isRunning = true;
     state.timeLeft = state.timeLeft > 0 ? state.timeLeft : ERA_SECONDS;
     state.productionThisEra = { food: 0, fuel: 0, material: 0 };
-    state.eventLog = [`第${state.era}纪开始。`, disasterEffects.warning];
+    state.eventLog = [`第${state.era}纪开始。`, startDisasterEffects.warning];
     startTimer();
     render();
   });
@@ -472,9 +473,10 @@ function renderTopHud(state) {
 
 function renderEventWarningPanel(state, disasterEffects) {
   const recentEvents = state.eventLog.slice(-4);
+  const eventKey = createEventWarningKey(state, disasterEffects);
 
   return `
-    <aside class="event-warning-panel">
+    <aside class="event-warning-panel" data-event-warning-key="${eventKey}">
       <h2>事件与预警</h2>
       <p>${disasterEffects.warning}</p>
       ${recentEvents.length > 0
@@ -482,6 +484,14 @@ function renderEventWarningPanel(state, disasterEffects) {
         : '<p>本纪尚未开始。</p>'}
     </aside>
   `;
+}
+
+function createEventWarningKey(state, disasterEffects) {
+  return [
+    state.era,
+    disasterEffects.warning,
+    state.eventLog.slice(-4).join('|'),
+  ].join('::');
 }
 
 function renderRightActionRail() {
@@ -662,6 +672,7 @@ function renderSettlementPage(root, state, render) {
     nextButton.addEventListener('click', () => {
       closeAllModals(state);
       state.era += 1;
+      prepareScheduledDisasterForEra(state);
       state.currentPage = 'main';
       state.eventLog = [];
       state.timeLeft = ERA_SECONDS;
@@ -1188,6 +1199,7 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
 }
 
 function settleEra(state) {
+  ensureScheduledDisasterForEra(state);
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   const production = state.productionThisEra || { food: 0, fuel: 0, material: 0 };
   const beforeHouseholds = state.households;
@@ -1215,6 +1227,7 @@ function settleEra(state) {
   return [
     `本纪资源产出：食物 +${formatNumber(production.food)}，燃料 +${formatNumber(production.fuel)}，材料 +${formatNumber(production.material)}。`,
     createBuildingMaintenanceLine(maintenanceResult),
+    createDisasterSummaryLine(disasterEffects),
     ...createEfficiencySettlementLines(disasterEffects),
     ...inventoryLossLines,
     ...createFuelSettlementLines(disasterEffects, state),
@@ -1230,6 +1243,15 @@ function settleEra(state) {
         ? '最终判定：文明撑过了第十五纪。'
         : `最终判定：文明存续，可以进入第${state.era + 1}纪。`,
   ];
+}
+
+function createDisasterSummaryLine(disasterEffects) {
+  if (disasterEffects.disasterNames.length === 0) {
+    return '本纪灾害：无。';
+  }
+
+  const levelText = isTerminalDisaster(disasterEffects) ? '终末灾害' : '普通灾害';
+  return `本纪灾害：${disasterEffects.disasterNames.join('、')}（${levelText}）。`;
 }
 
 function getBuildingMaintenanceCost(state) {
@@ -1873,12 +1895,16 @@ function prepareGeneration(state, mapData) {
   state.techs = createInitialTechState();
   state.eventLog = [];
   state.lastEventText = null;
+  state.disasterPlan = null;
+  state.scheduledDisaster = null;
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
   state.settlementLines = [];
   state.pendingLegacyChoice = null;
   state.pendingLegacyChoices = [];
+  prepareDisasterPlanForState(state);
+  prepareScheduledDisasterForEra(state);
 }
 
 function resetRunToStart(state) {
@@ -1917,6 +1943,8 @@ function resetRunToStart(state) {
   state.techs = createInitialTechState();
   state.eventLog = [];
   state.lastEventText = null;
+  state.disasterPlan = null;
+  state.scheduledDisaster = null;
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;

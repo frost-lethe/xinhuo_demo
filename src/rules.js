@@ -7,7 +7,12 @@ import {
   WORK_PROGRESS_PER_WORKER_PER_SECOND,
   WORK_RULES,
 } from './constants.js';
-import { getEraDisasterEffects } from './disasters.js';
+import {
+  ensureScheduledDisasterForEra,
+  getEraDisasterEffects,
+  prepareDisasterPlanForState,
+  prepareScheduledDisasterForEra,
+} from './disasters.js';
 
 export function prepareGeneration(state, mapData) {
   state.currentPage = 'map';
@@ -32,11 +37,15 @@ export function prepareGeneration(state, mapData) {
   };
   state.currentCivilizationDeaths = 0;
   state.eventLog = [];
+  state.disasterPlan = null;
+  state.scheduledDisaster = null;
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
+  prepareDisasterPlanForState(state);
+  prepareScheduledDisasterForEra(state);
 }
 
 export function chooseCore(state, candidateIndex) {
@@ -52,10 +61,12 @@ export function chooseCore(state, candidateIndex) {
 }
 
 export function startEra(state) {
+  ensureScheduledDisasterForEra(state);
+  const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   state.isRunning = true;
   state.timeLeft = ERA_SECONDS;
   state.eventLog = [
-    `第 ${state.era} 纪开始。${getEraDisasterEffects(state.mapType, state.era).notes.join(' ') || '本纪风平浪静。'}`,
+    `第 ${state.era} 纪开始。${disasterEffects.notes.join(' ') || '本纪风平浪静。'}`,
   ];
 }
 
@@ -110,6 +121,7 @@ export function tickEra(state, deltaSeconds) {
 
 export function goToNextEra(state) {
   state.era += 1;
+  prepareScheduledDisasterForEra(state);
   state.currentPage = 'main';
   state.eventLog = [];
   state.timeLeft = ERA_SECONDS;
@@ -142,7 +154,7 @@ export function getSettlementOutcome(state) {
 }
 
 function produceResources(state, deltaSeconds) {
-  const effects = getEraDisasterEffects(state.mapType, state.era);
+  const effects = getEraDisasterEffects(state.mapType, state.era, state);
 
   state.assignedWorkers.forEach((work) => {
     if (work.workers <= 0) {
@@ -181,8 +193,9 @@ function triggerTimedEvents(state, previousElapsed, currentElapsed) {
 }
 
 function settleEra(state) {
+  ensureScheduledDisasterForEra(state);
   const lines = [];
-  const effects = getEraDisasterEffects(state.mapType, state.era);
+  const effects = getEraDisasterEffects(state.mapType, state.era, state);
 
   const lossParts = [];
   RESOURCE_KEYS.forEach((resource) => {

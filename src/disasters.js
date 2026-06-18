@@ -7,6 +7,11 @@ export const WAREHOUSE_PROTECTION_CAP = 0.60;
 export const CALENDAR_ORDINARY_DISASTER_REDUCTION = 0.10;
 export const CALENDAR_TERMINAL_DISASTER_REDUCTION = 0.05;
 
+const EARLY_DISASTER_ERAS = [4, 5];
+const MIDDLE_DISASTER_ERAS = [8, 9, 10];
+const TERMINAL_DISASTER_ERAS = [12, 13, 14, 15];
+const DEFAULT_THEME_CHANCE = 0.4;
+
 export const DISASTER_DESCRIPTIONS = Object.freeze({
   寒潮: '提高燃料压力。',
   干旱: '削弱食物生产或损失食物库存。',
@@ -36,6 +41,239 @@ export function getBuildingCount(state = null) {
     + (state?.warehouseCount ?? 0);
 }
 
+const DISASTER_DEFINITIONS = Object.freeze({
+  cold_early: {
+    id: 'cold_early',
+    name: '寒潮',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 4) addFuelMultiplier(effects, '寒潮', 0.15, '基础燃料消耗 +15%。');
+      if (era === 5) addExtraFuel(effects, '寒潮', 1, '结算时每户额外燃料需求 +1。');
+    },
+  },
+  drought_early: {
+    id: 'drought_early',
+    name: '干旱',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 4) addFoodEfficiency(effects, '干旱', 0.85, '草原工作效率 -15%。');
+      if (era === 5) addInventoryLoss(effects, '干旱', 'food', 0.12, '食物库存损失 12%。');
+    },
+  },
+  beast_early: {
+    id: 'beast_early',
+    name: '兽群',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 4) addNoteOnly(effects, '兽群', '兽群逼近，外派工作风险上升。');
+      if (era === 5) addMaterialDemand(effects, '兽群', Math.ceil((state?.households ?? 0) * 0.8), '材料需求 = ceil(当前户数 x0.8)。');
+    },
+  },
+  flood_early: {
+    id: 'flood_early',
+    name: '洪水',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 4) addNoteOnly(effects, '洪水', '河水上涨，低地仓储变得不再安稳。');
+      if (era === 5) addInventoryLoss(effects, '洪水', 'food', 0.08, '食物库存损失 8%。');
+    },
+  },
+  quake_early: {
+    id: 'quake_early',
+    name: '地震',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 4) addNoteOnly(effects, '地震', '地面传来细碎震动，建筑维护压力正在上升。');
+      if (era === 5) addMaterialDemand(effects, '地震', getBuildingCount(state) * 4, '材料需求 = 建筑数 x4。');
+    },
+  },
+  cold_middle: {
+    id: 'cold_middle',
+    name: '严冬',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 8) addFuelMultiplier(effects, '严冬', 0.15, '基础燃料消耗 +15%。');
+      if (era === 9) addFuelMultiplier(effects, '严冬', 0.25, '基础燃料消耗 +25%。');
+      if (era === 10) addExtraFuel(effects, '严冬', 1.6, '结算时每户额外燃料需求 +1.6。');
+    },
+  },
+  drought_middle: {
+    id: 'drought_middle',
+    name: '大旱',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 8) addFoodEfficiency(effects, '大旱', 0.82, '食物类工作效率 -18%。');
+      if (era === 9) addFoodEfficiency(effects, '大旱', 0.75, '食物类工作效率 -25%。');
+      if (era === 10) addInventoryLoss(effects, '大旱', 'food', 0.18, '食物库存损失 18%。');
+    },
+  },
+  beast_middle: {
+    id: 'beast_middle',
+    name: '兽群',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 8) addNoteOnly(effects, '兽群', '兽群迁徙穿过边缘地带，守夜的火被添得更旺。');
+      if (era === 9) addNoteOnly(effects, '兽群', '更多足迹靠近聚落，外部冲击正在加重。');
+      if (era === 10) addMaterialDemand(effects, '兽群', Math.ceil((state?.households ?? 0) * 0.8), '材料需求 = ceil(当前户数 x0.8)。');
+    },
+  },
+  flood_middle: {
+    id: 'flood_middle',
+    name: '洪水',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 8) addInventoryLoss(effects, '洪水', 'food', 0.08, '食物库存损失 8%。');
+      if (era === 9) {
+        addInventoryLoss(effects, '洪水', 'food', 0.12, '食物库存损失 12%。');
+        addInventoryLoss(effects, '洪水', 'fuel', 0.08, '燃料库存损失 8%。');
+      }
+      if (era === 10) {
+        addMaterialDemand(effects, '洪水', getBuildingCount(state) * 6, '材料需求 = 建筑数 x6。');
+        addInventoryLoss(effects, '洪水', 'food', 0.15, '食物库存损失 15%。');
+      }
+    },
+  },
+  quake_middle: {
+    id: 'quake_middle',
+    name: '地震',
+    kind: 'ordinary',
+    apply: (effects, state, era) => {
+      if (era === 8) addNoteOnly(effects, '地震', '地面传来细碎震动，建筑维护压力正在上升。');
+      if (era === 9) addMaterialDemand(effects, '地震', getBuildingCount(state) * 4, '材料需求 = 建筑数 x4。');
+      if (era === 10) addMaterialDemand(effects, '地震', getBuildingCount(state) * 7, '材料需求 = 建筑数 x7。');
+    },
+  },
+  endgame_disorder: {
+    id: 'endgame_disorder',
+    name: '终末失序',
+    kind: 'terminal',
+    apply: (effects, state, era) => applyEndgameDisorder(effects, era, state),
+  },
+});
+
+const DISASTER_THEMES = Object.freeze({
+  cold: { theme: 'cold', earlyDisasterId: 'cold_early', middleDisasterId: 'cold_middle', terminalDisasterId: 'endgame_disorder' },
+  drought: { theme: 'drought', earlyDisasterId: 'drought_early', middleDisasterId: 'drought_middle', terminalDisasterId: 'endgame_disorder' },
+  beast: { theme: 'beast', earlyDisasterId: 'beast_early', middleDisasterId: 'beast_middle', terminalDisasterId: 'endgame_disorder' },
+  flood: { theme: 'flood', earlyDisasterId: 'flood_early', middleDisasterId: 'flood_middle', terminalDisasterId: 'endgame_disorder' },
+  quake: { theme: 'quake', earlyDisasterId: 'quake_early', middleDisasterId: 'quake_middle', terminalDisasterId: 'endgame_disorder' },
+});
+
+export function prepareScheduledDisasterForEra(state) {
+  if (!state) {
+    return null;
+  }
+
+  const disasterPlan = ensureDisasterPlan(state);
+  const disasterId = getDisasterIdForEra(disasterPlan, state.era);
+  state.scheduledDisaster = disasterId
+    ? createScheduledDisaster(state.era, disasterId, disasterPlan)
+    : null;
+
+  return state.scheduledDisaster;
+}
+
+export function prepareDisasterPlanForState(state) {
+  if (!state?.mapType) {
+    return null;
+  }
+
+  const theme = pickDisasterThemeForMap(state.mapType);
+  const themePlan = DISASTER_THEMES[theme];
+  state.disasterPlan = themePlan ? { ...themePlan } : null;
+  state.scheduledDisaster = null;
+
+  return state.disasterPlan;
+}
+
+export function ensureDisasterPlan(state) {
+  if (!state) {
+    return null;
+  }
+
+  if (state.disasterPlan?.theme && DISASTER_THEMES[state.disasterPlan.theme]) {
+    return state.disasterPlan;
+  }
+
+  return prepareDisasterPlanForState(state);
+}
+
+export function ensureScheduledDisasterForEra(state) {
+  if (!state) {
+    return null;
+  }
+
+  if (state.scheduledDisaster?.era === state.era) {
+    return state.scheduledDisaster;
+  }
+
+  return prepareScheduledDisasterForEra(state);
+}
+
+export function getScheduledDisasterDefinition(scheduledDisaster) {
+  return scheduledDisaster?.id ? DISASTER_DEFINITIONS[scheduledDisaster.id] ?? null : null;
+}
+
+function getDisasterIdForEra(disasterPlan, era) {
+  if (!disasterPlan) {
+    return null;
+  }
+
+  if (EARLY_DISASTER_ERAS.includes(era)) {
+    return disasterPlan.earlyDisasterId;
+  }
+
+  if (MIDDLE_DISASTER_ERAS.includes(era)) {
+    return disasterPlan.middleDisasterId;
+  }
+
+  if (TERMINAL_DISASTER_ERAS.includes(era)) {
+    return disasterPlan.terminalDisasterId;
+  }
+
+  return null;
+}
+
+function pickDisasterThemeForMap(mapType) {
+  const defaultTheme = getDefaultDisasterThemeForMap(mapType);
+  const themeIds = Object.keys(DISASTER_THEMES);
+
+  if (defaultTheme && Math.random() < DEFAULT_THEME_CHANCE) {
+    return defaultTheme;
+  }
+
+  const otherThemes = themeIds.filter((theme) => theme !== defaultTheme);
+  return pick(otherThemes.length > 0 ? otherThemes : themeIds);
+}
+
+function getDefaultDisasterThemeForMap(mapType) {
+  const defaultThemes = {
+    寒冷: 'cold',
+    干燥: 'drought',
+    河谷: 'flood',
+    山地: 'quake',
+    荒野: 'beast',
+  };
+
+  return defaultThemes[mapType] ?? 'drought';
+}
+
+function createScheduledDisaster(era, disasterId, disasterPlan) {
+  const definition = DISASTER_DEFINITIONS[disasterId];
+
+  if (!definition) {
+    return null;
+  }
+
+  return {
+    era,
+    id: definition.id,
+    name: definition.name,
+    kind: definition.kind,
+    theme: disasterPlan?.theme ?? null,
+  };
+}
+
 export function getWarehouseProtectionRate(state = null) {
   const warehouseCount = Math.max(0, state?.warehouseCount ?? 0);
   return Math.min(
@@ -55,7 +293,7 @@ export function applyWarehouseProtectionToLoss(baseLoss, state = null) {
 }
 
 export function isTerminalDisaster(effects = null) {
-  return Boolean(effects?.disasterNames?.includes('终末失序'));
+  return Boolean(effects?.isTerminalDisaster || effects?.disasterNames?.includes('终末失序'));
 }
 
 export function getCalendarDisasterReductionRate(state = null, effects = null) {
@@ -87,15 +325,34 @@ export function getEraDisasterEffects(mapType, era, state = null) {
     fuelNotes: [],
     materialNotes: [],
     techNotes: [],
+    scheduledDisaster: null,
+    isTerminalDisaster: false,
     warning: '本纪灾害：无。',
   };
 
-  applyMapDisaster(effects, mapType, era, state);
-  applyEndgameDisorder(effects, era, state);
+  if (state?.scheduledDisaster?.era === era) {
+    applyScheduledDisaster(effects, state.scheduledDisaster, state);
+  } else if (!state) {
+    applyMapDisaster(effects, mapType, era, state);
+    applyEndgameDisorder(effects, era, state);
+  }
+
   applyTechModifiers(effects, state);
   effects.warning = createWarning(effects, state);
 
   return effects;
+}
+
+function applyScheduledDisaster(effects, scheduledDisaster, state) {
+  const definition = getScheduledDisasterDefinition(scheduledDisaster);
+
+  if (!definition) {
+    return;
+  }
+
+  effects.scheduledDisaster = { ...scheduledDisaster };
+  effects.isTerminalDisaster = definition.kind === 'terminal';
+  definition.apply(effects, state, scheduledDisaster.era);
 }
 
 function applyTechModifiers(effects, state) {
@@ -170,7 +427,7 @@ export function getDisasterAtmosphere(mapType, era) {
 
 export function getEventLogText(state, second) {
   const currentEffects = getEraDisasterEffects(state.mapType, state.era, state);
-  const nextEffects = getEraDisasterEffects(state.mapType, state.era + 1, state);
+  const nextEffects = getPlannedEraDisasterEffects(state, state.era + 1);
   const currentCategory = getEventCategory(currentEffects.disasterNames);
   const nextCategory = getEventCategory(nextEffects.disasterNames);
   const resourceText = getLowResourceText(state);
@@ -202,6 +459,18 @@ export function getEventLogText(state, second) {
 
   state.lastEventText = text;
   return text;
+}
+
+function getPlannedEraDisasterEffects(state, era) {
+  const disasterPlan = ensureDisasterPlan(state);
+  const disasterId = getDisasterIdForEra(disasterPlan, era);
+  const previewState = {
+    ...state,
+    era,
+    scheduledDisaster: disasterId ? createScheduledDisaster(era, disasterId, disasterPlan) : null,
+  };
+
+  return getEraDisasterEffects(state.mapType, era, previewState);
 }
 
 function getEventCategory(disasterNames) {
@@ -364,22 +633,49 @@ function addMaterialDemand(effects, name, amount, note) {
 
 function createWarning(effects, state = null) {
   if (effects.notes.length === 0) {
+    if (state?.era === 11) {
+      return isTechUnlocked(state, 'calendar')
+        ? '历法预警：旧年的刻痕出现重复，终末前的秩序正在变薄。'
+        : '远方的天色变得很低，族人说不清哪里不对。';
+    }
+
     return '本纪灾害：无。';
   }
 
   if (isTechUnlocked(state, 'calendar')) {
-    return `历法预警：${getCalendarWarningText(effects)} ${effects.notes.join(' ')}`;
+    return `历法预警：${getCalendarWarningText(effects)}`;
   }
 
-  if (effects.disasterNames.includes('终末失序')) {
-    return `终末失序正在发生：${effects.notes.join(' ')}`;
+  return getAtmosphericWarningText(effects);
+}
+
+function getAtmosphericWarningText(effects) {
+  if (isTerminalDisaster(effects)) {
+    return '预警：世界的秩序正在松动，储备、火与聚落都让人不安。';
   }
 
-  return `本纪灾害：${effects.disasterNames.join('、')}。${effects.notes.join(' ')}`;
+  if (effects.materialDemand > 0) {
+    return '预警：聚落边缘传来不安的动静，族人开始检查木桩与石料。';
+  }
+
+  const hasInventoryLoss = Object.values(effects.inventoryLoss).some((rate) => rate > 0);
+  if (hasInventoryLoss) {
+    return '预警：仓储里传来潮冷的气味，老人提醒大家看紧储备。';
+  }
+
+  if (effects.fuelMultiplier > 1 || effects.extraFuelPerHousehold > 0) {
+    return '预警：夜里的风更硬了，守火的人坐得比平时更近。';
+  }
+
+  if (effects.efficiency.food < 1 || effects.efficiency.all < 1) {
+    return '预警：土地和草叶显得沉默，采集的人带回了迟疑的消息。';
+  }
+
+  return '预警：风向不太对，族人开始不安地望向天边。';
 }
 
 function getCalendarWarningText(effects) {
-  if (isTerminalDisaster(effects)) {
+  if (effects.disasterNames.includes('终末失序')) {
     return '旧年的刻痕与星象吻合，终末失序会让全部储备承压。';
   }
 

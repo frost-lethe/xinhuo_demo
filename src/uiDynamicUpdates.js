@@ -37,10 +37,19 @@ function updateHudDynamicFields(root, state) {
 function updateEventPanelDynamicFields(root, state, dependencies) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   const eventPanel = root.querySelector('.event-warning-panel');
+  const nextKey = createEventWarningKey(state, disasterEffects);
 
-  if (eventPanel) {
+  if (eventPanel && eventPanel.dataset.eventWarningKey !== nextKey) {
     eventPanel.outerHTML = dependencies.renderEventWarningPanel(state, disasterEffects);
   }
+}
+
+function createEventWarningKey(state, disasterEffects) {
+  return [
+    state.era,
+    disasterEffects.warning,
+    state.eventLog.slice(-4).join('|'),
+  ].join('::');
 }
 
 function updateMapDynamicFields(root, state, dependencies) {
