@@ -654,11 +654,14 @@ function restorePanelScroll(root, state) {
 }
 
 function renderSettlementPage(root, state, render) {
+  const isTerminalSettlement = state.pendingVictory && state.era >= MAX_ERA;
+
   root.innerHTML = `
     <main class="app-shell">
       <section class="panel">
         <p class="eyebrow">第${state.era}纪结算</p>
-        <h1>本纪结算</h1>
+        <h1>${isTerminalSettlement ? '第十五纪终末结算' : '本纪结算'}</h1>
+        ${isTerminalSettlement ? '<p>第十五纪的灾难已经过去，文明没有完全熄灭。终末之后，先清点这一纪留下的代价。</p>' : ''}
         <ol class="settlement-lines">
           ${state.settlementLines.map((line) => `<li>${line}</li>`).join('')}
         </ol>
@@ -696,6 +699,7 @@ function renderSettlementPage(root, state, render) {
   if (wonButton) {
     wonButton.addEventListener('click', () => {
       closeAllModals(state);
+      state.pendingVictory = false;
       state.currentPage = 'won';
       state.panelScrollTop = 0;
       render();
@@ -1120,7 +1124,7 @@ function renderSettlementAction(state) {
   }
 
   if (state.era >= MAX_ERA) {
-    return '<button class="primary-action" type="button" data-action="won">胜利（占位）</button>';
+    return '<button class="primary-action" type="button" data-action="won">查看通关结算</button>';
   }
 
   return '<button class="primary-action" type="button" data-action="next-era">进入下一纪准备</button>';
@@ -1143,7 +1147,8 @@ function advanceEra(state, deltaSeconds) {
     closeAllModals(state);
     state.panelScrollTop = 0;
     state.settlementLines = settleEra(state);
-    state.currentPage = state.households > 0 && state.era >= MAX_ERA ? 'won' : 'settlement';
+    state.pendingVictory = state.households > 0 && state.era >= MAX_ERA;
+    state.currentPage = 'settlement';
     eraEnded = true;
   }
 
@@ -1235,6 +1240,8 @@ function settleEra(state) {
     `消耗：食物 ${formatNumber(consumedFood)}，燃料 ${formatNumber(consumedFuel)}。`,
     materialResult.line,
     `死亡户数：${actualSupplyDeaths + materialResult.deaths} 户。`,
+    `结算后户数：${state.households} 户（结算前 ${beforeHouseholds} 户）。`,
+    `结算后资源：食物 ${formatNumber(state.resources.food)}，燃料 ${formatNumber(state.resources.fuel)}，材料 ${formatNumber(state.resources.material)}。`,
     `本世累计死亡：${state.currentCivilizationDeaths} 户。`,
     `所有世累计死亡：${state.totalDeathsAllCivilizations} 户。`,
     state.households <= 0
@@ -1901,6 +1908,7 @@ function prepareGeneration(state, mapData) {
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
   state.settlementLines = [];
+  state.pendingVictory = false;
   state.pendingLegacyChoice = null;
   state.pendingLegacyChoices = [];
   prepareDisasterPlanForState(state);
@@ -1950,6 +1958,7 @@ function resetRunToStart(state) {
   state.speed = 1;
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
+  state.pendingVictory = false;
 }
 
 function updateHighestHouseholds(state) {

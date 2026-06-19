@@ -64,6 +64,7 @@ export function createInitialState() {
     speed: 1,
     settlementLines: [],
     revealedSettlementLines: 0,
+    pendingVictory: false,
   };
 }
 

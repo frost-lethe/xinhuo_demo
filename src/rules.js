@@ -44,6 +44,7 @@ export function prepareGeneration(state, mapData) {
   state.speed = 1;
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
+  state.pendingVictory = false;
   prepareDisasterPlanForState(state);
   prepareScheduledDisasterForEra(state);
 }
@@ -115,6 +116,7 @@ export function tickEra(state, deltaSeconds) {
     state.isRunning = false;
     state.settlementLines = settleEra(state);
     state.revealedSettlementLines = 1;
+    state.pendingVictory = state.households > 0 && state.era >= MAX_ERA;
     state.currentPage = 'settlement';
   }
 }
@@ -128,6 +130,7 @@ export function goToNextEra(state) {
   state.isRunning = false;
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
+  state.pendingVictory = false;
 }
 
 export function revealNextSettlementLine(state) {
