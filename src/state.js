@@ -65,6 +65,8 @@ export function createInitialState() {
     settlementLines: [],
     revealedSettlementLines: 0,
     pendingVictory: false,
+    settingsOpen: false,
+    tutorialOpen: false,
   };
 }
 

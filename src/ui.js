@@ -35,6 +35,12 @@ import {
 import { updateDynamicUI } from './uiDynamicUpdates.js';
 import { formatNumber, getTimerText } from './uiFormatters.js';
 import { closeAllModals, closePanelModal, closePointModal } from './uiModalState.js';
+import {
+  clearSave,
+  getSaveMeta,
+  loadGame,
+  saveGame,
+} from './saveSystem.js';
 
 const BUILDING_MAINTENANCE_MATERIAL_PER_BUILDING = 1;
 
@@ -46,6 +52,7 @@ export function createGameUI(root, state) {
   const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
   let timerId = null;
   let lastTickAt = 0;
+  let lastAutoSaveAt = 0;
 
   const stopTimer = () => {
     if (timerId) {
@@ -96,7 +103,7 @@ export function createGameUI(root, state) {
     }
 
     if (state.currentPage === 'main') {
-      renderMainPage(root, state, render, startTimer, debugEnabled);
+      renderMainPage(root, state, render, startTimer, stopTimer, debugEnabled);
       return;
     }
 
@@ -116,11 +123,12 @@ export function createGameUI(root, state) {
     }
 
     if (state.currentPage === 'won') {
+      clearSave();
       renderVictoryPage(root, state, render);
       return;
     }
 
-    renderStartPage(root, state, render);
+    renderStartPage(root, state, render, stopTimer);
   };
 
   const startTimer = () => {
@@ -142,6 +150,7 @@ export function createGameUI(root, state) {
         }
 
         if (tickResult.techUnlocked) {
+          saveGame(state);
           render();
           return;
         }
@@ -151,6 +160,11 @@ export function createGameUI(root, state) {
           getWorkForTile,
           renderEventWarningPanel,
         });
+
+        if (now - lastAutoSaveAt >= 5000) {
+          saveGame(state);
+          lastAutoSaveAt = now;
+        }
       }
     }, 250);
   };
@@ -159,21 +173,49 @@ export function createGameUI(root, state) {
   render();
 }
 
-function renderStartPage(root, state, render) {
+function renderStartPage(root, state, render, stopTimer) {
+  const saveMeta = getSaveMeta();
+
   root.innerHTML = `
     <main class="app-shell">
       <section class="intro" aria-labelledby="game-title">
         <p class="eyebrow">文明生存 roguelite Demo</p>
         <h1 id="game-title">薪火</h1>
         <p class="tagline">一世一文明，传承薪火，撑过第十五纪。</p>
-        <button class="primary-action" type="button" data-action="start">开始新局</button>
+        ${saveMeta ? `<p>已保存：第 ${saveMeta.generation} 世 · 第 ${saveMeta.era} 纪<br>保存时间：${formatSaveTime(saveMeta.savedAt)}</p>` : '<p>暂无保存进度。</p>'}
+        <div class="controls">
+          <button class="primary-action" type="button" data-action="start">新的纪元</button>
+          <button type="button" data-action="load" ${saveMeta ? '' : 'disabled'}>读取进度</button>
+        </div>
       </section>
     </main>
   `;
 
   root.querySelector('[data-action="start"]').addEventListener('click', () => {
+    if (saveMeta && !window.confirm('开始新的纪元将删除当前进度，确定吗？')) {
+      return;
+    }
+
+    stopTimer();
+    clearSave();
+    resetRunToStart(state);
     const mapData = generateMap();
     prepareGeneration(state, mapData);
+    saveGame(state);
+    render();
+  });
+
+  root.querySelector('[data-action="load"]')?.addEventListener('click', () => {
+    stopTimer();
+    const result = loadGame();
+
+    if (!result.ok) {
+      window.alert?.(result.error);
+      render();
+      return;
+    }
+
+    restoreSavedState(state, result.state);
     render();
   });
 }
@@ -207,6 +249,7 @@ function renderMapPage(root, state, render) {
 
   root.querySelector('[data-action="core"]').addEventListener('click', () => {
     state.currentPage = 'core';
+    saveGame(state);
     render();
   });
 }
@@ -264,11 +307,12 @@ function renderCorePage(root, state, render) {
     state.selectedCoreAdjacentTileIds = [...candidate.adjacentTileIds];
     refreshWorkTilesFromSettlements(state);
     state.currentPage = 'main';
+    saveGame(state);
     render();
   });
 }
 
-function renderMainPage(root, state, render, startTimer, debugEnabled) {
+function renderMainPage(root, state, render, startTimer, stopTimer, debugEnabled) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
 
   root.innerHTML = `
@@ -283,7 +327,18 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
     </main>
     ${state.openPointId ? renderPointModal(state, disasterEffects) : ''}
     ${renderDebugConsole(state, debugEnabled)}
+    ${renderSettingsOverlay(state)}
   `;
+
+  root.querySelector('[data-action="settings"]')?.addEventListener('click', () => {
+    closeAllModals(state);
+    state.debugConsoleOpen = false;
+    state.settingsOpen = true;
+    state.tutorialOpen = false;
+    render();
+  });
+
+  bindSettingsControls(root, state, render, stopTimer);
 
   root.querySelectorAll('[data-open-panel]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -326,6 +381,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   root.querySelectorAll('[data-assign]').forEach((button) => {
     button.addEventListener('click', () => {
       assignWorker(state, Number(button.dataset.assign));
+      saveGame(state);
       render();
     });
   });
@@ -333,6 +389,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   root.querySelectorAll('[data-unassign]').forEach((button) => {
     button.addEventListener('click', () => {
       unassignWorker(state, Number(button.dataset.unassign));
+      saveGame(state);
       render();
     });
   });
@@ -340,6 +397,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   root.querySelectorAll('[data-switch-job]').forEach((button) => {
     button.addEventListener('click', () => {
       switchWorkJob(state, Number(button.dataset.switchJob), button.dataset.targetJob);
+      saveGame(state);
       render();
     });
   });
@@ -384,6 +442,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   root.querySelectorAll('[data-tech-assign]').forEach((button) => {
     button.addEventListener('click', () => {
       assignResearchWorker(state, button.dataset.techAssign);
+      saveGame(state);
       render();
     });
   });
@@ -391,27 +450,32 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
   root.querySelectorAll('[data-tech-unassign]').forEach((button) => {
     button.addEventListener('click', () => {
       unassignResearchWorker(state, button.dataset.techUnassign);
+      saveGame(state);
       render();
     });
   });
 
   root.querySelector('[data-action="grow-household"]')?.addEventListener('click', () => {
     growHousehold(state);
+    saveGame(state);
     render();
   });
 
   root.querySelector('[data-action="upgrade-influence"]')?.addEventListener('click', () => {
     upgradeInfluence(state);
+    saveGame(state);
     render();
   });
 
   root.querySelector('[data-action="build-point-settlement"]')?.addEventListener('click', () => {
     buildOrdinarySettlement(state, state.openPointId);
+    saveGame(state);
     render();
   });
 
   root.querySelector('[data-action="build-point-warehouse"]')?.addEventListener('click', () => {
     buildPointWarehouse(state, state.openPointId);
+    saveGame(state);
     render();
   });
 
@@ -423,6 +487,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
     state.productionThisEra = { food: 0, fuel: 0, material: 0 };
     state.eventLog = [`第${state.era}纪开始。`, startDisasterEffects.warning];
     startTimer();
+    saveGame(state);
     render();
   });
 
@@ -431,6 +496,7 @@ function renderMainPage(root, state, render, startTimer, debugEnabled) {
     if (state.isRunning) {
       startTimer();
     }
+    saveGame(state);
     render();
   });
 
@@ -466,9 +532,85 @@ function renderTopHud(state) {
         <button type="button" data-speed="2" class="${state.speed === 2 ? 'is-selected' : ''}">2x</button>
         <button type="button" data-speed="5" class="${state.speed === 5 ? 'is-selected' : ''}">5x</button>
         <button type="button" data-speed="10" class="${state.speed === 10 ? 'is-selected' : ''}">10x</button>
+        <button type="button" data-action="settings">设置</button>
       </div>
     </header>
   `;
+}
+
+function renderSettingsOverlay(state) {
+  if (!state.settingsOpen) {
+    return '';
+  }
+
+  return `
+    <div class="modal-overlay" data-settings-backdrop>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-label="${state.tutorialOpen ? '简易教程' : '设置'}" data-settings-panel>
+        <header class="modal-header">
+          <h2>${state.tutorialOpen ? '简易教程' : '设置'}</h2>
+        </header>
+        <div class="modal-body">
+          ${state.tutorialOpen
+            ? `
+              <p>这里将会是教程</p>
+              <button type="button" data-settings-back>返回设置</button>
+            `
+            : `
+              <div class="controls">
+                <button class="primary-action" type="button" data-settings-continue>继续游戏</button>
+                <button type="button" data-settings-tutorial>简易教程</button>
+                <button type="button" data-settings-exit>保存并退出</button>
+              </div>
+            `}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function bindSettingsControls(root, state, render, stopTimer) {
+  if (!state.settingsOpen) {
+    return;
+  }
+
+  root.querySelector('[data-settings-panel]')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
+  root.querySelector('[data-settings-continue]')?.addEventListener('click', () => {
+    state.settingsOpen = false;
+    state.tutorialOpen = false;
+    render();
+  });
+
+  root.querySelector('[data-settings-tutorial]')?.addEventListener('click', () => {
+    state.tutorialOpen = true;
+    render();
+  });
+
+  root.querySelector('[data-settings-back]')?.addEventListener('click', () => {
+    state.tutorialOpen = false;
+    render();
+  });
+
+  root.querySelector('[data-settings-exit]')?.addEventListener('click', () => {
+    const result = saveGame(state);
+
+    if (!result.ok) {
+      window.alert?.(result.error);
+      return;
+    }
+
+    stopTimer();
+    state.isRunning = false;
+    state.speed = 1;
+    state.settingsOpen = false;
+    state.tutorialOpen = false;
+    state.debugConsoleOpen = false;
+    closeAllModals(state);
+    state.currentPage = 'start';
+    render();
+  });
 }
 
 function renderEventWarningPanel(state, disasterEffects) {
@@ -564,6 +706,7 @@ function bindDebugConsoleControls(root, state, render, debugEnabled) {
         button.dataset.debugResource,
         Number(button.dataset.debugDelta),
       );
+      saveGame(state);
       render();
     });
   });
@@ -571,6 +714,7 @@ function bindDebugConsoleControls(root, state, render, debugEnabled) {
   root.querySelectorAll('[data-debug-households]').forEach((button) => {
     button.addEventListener('click', () => {
       adjustDebugHouseholds(state, Number(button.dataset.debugHouseholds));
+      saveGame(state);
       render();
     });
   });
@@ -681,6 +825,8 @@ function renderSettlementPage(root, state, render) {
       state.timeLeft = ERA_SECONDS;
       state.isRunning = false;
       state.panelScrollTop = 0;
+      state.pendingVictory = false;
+      saveGame(state);
       render();
     });
   }
@@ -691,6 +837,7 @@ function renderSettlementPage(root, state, render) {
       closeAllModals(state);
       state.currentPage = 'lost';
       state.panelScrollTop = 0;
+      saveGame(state);
       render();
     });
   }
@@ -702,6 +849,7 @@ function renderSettlementPage(root, state, render) {
       state.pendingVictory = false;
       state.currentPage = 'won';
       state.panelScrollTop = 0;
+      clearSave();
       render();
     });
   }
@@ -748,6 +896,7 @@ function renderLostPage(root, state, render) {
     state.pendingLegacyChoices = [];
     state.currentPage = 'legacy';
     state.panelScrollTop = 0;
+    saveGame(state);
     render();
   });
 }
@@ -797,6 +946,7 @@ function renderLegacyPage(root, state, render) {
       }
       state.pendingLegacyChoices = Array.from(nextSelectedIds);
       state.pendingLegacyChoice = state.pendingLegacyChoices[0] ?? null;
+      saveGame(state);
       render();
     });
   });
@@ -807,6 +957,7 @@ function renderLegacyPage(root, state, render) {
     state.activeLegacyBonus = choices[0] ?? null;
     state.generation += 1;
     prepareGeneration(state, generateMap());
+    saveGame(state);
     render();
   });
 }
@@ -1149,6 +1300,7 @@ function advanceEra(state, deltaSeconds) {
     state.settlementLines = settleEra(state);
     state.pendingVictory = state.households > 0 && state.era >= MAX_ERA;
     state.currentPage = 'settlement';
+    saveGame(state);
     eraEnded = true;
   }
 
@@ -1909,6 +2061,8 @@ function prepareGeneration(state, mapData) {
   state.speed = 1;
   state.settlementLines = [];
   state.pendingVictory = false;
+  state.settingsOpen = false;
+  state.tutorialOpen = false;
   state.pendingLegacyChoice = null;
   state.pendingLegacyChoices = [];
   prepareDisasterPlanForState(state);
@@ -1959,6 +2113,26 @@ function resetRunToStart(state) {
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
   state.pendingVictory = false;
+  state.settingsOpen = false;
+  state.tutorialOpen = false;
+}
+
+function restoreSavedState(state, savedState) {
+  Object.assign(state, savedState);
+  state.isRunning = false;
+  state.speed = 1;
+  state.openPanel = null;
+  state.openPointId = null;
+  state.panelScrollTop = 0;
+  state.settingsOpen = false;
+  state.tutorialOpen = false;
+  state.debugConsoleOpen = false;
+  closeAllModals(state);
+}
+
+function formatSaveTime(savedAt) {
+  const date = new Date(savedAt);
+  return Number.isNaN(date.getTime()) ? '未知' : date.toLocaleString('zh-CN');
 }
 
 function updateHighestHouseholds(state) {
