@@ -594,6 +594,80 @@ button:disabled {
   line-height: 1.7;
 }
 
+.era-ledger-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.era-ledger-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffdf7;
+}
+
+.era-ledger-card h2 {
+  margin-bottom: 6px;
+}
+
+.ledger-balance {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ledger-line {
+  display: grid;
+  grid-template-columns: minmax(54px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  border-top: 1px solid rgb(115 91 54 / 0.14);
+  padding: 8px 0;
+}
+
+.ledger-line strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-plus strong {
+  color: #23623a;
+}
+
+.ledger-minus strong,
+.ledger-shortage strong {
+  color: #9b352b;
+}
+
+.ledger-total {
+  border-top-color: var(--border);
+  font-size: 1.05rem;
+}
+
+.ledger-source {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.settlement-summary {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+
+.settlement-summary p {
+  margin-bottom: 6px;
+}
+
+.settlement-atmosphere {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .top-hud {
   position: fixed;
   top: 0;
@@ -811,6 +885,10 @@ button:disabled {
 }
 
 @media (max-width: 820px) {
+  .era-ledger-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .top-hud {
     position: sticky;
     grid-template-columns: 1fr;
@@ -844,6 +922,12 @@ button:disabled {
   }
 
   .game-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .era-ledger-grid {
     grid-template-columns: 1fr;
   }
 }

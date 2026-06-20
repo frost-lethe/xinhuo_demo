@@ -485,6 +485,9 @@ function renderMainPage(root, state, render, startTimer, stopTimer, debugEnabled
     state.isRunning = true;
     state.timeLeft = state.timeLeft > 0 ? state.timeLeft : ERA_SECONDS;
     state.productionThisEra = { food: 0, fuel: 0, material: 0 };
+    state.eraResourceGains = state.productionThisEra;
+    state.eraStartResources = { ...state.resources };
+    state.lastEraLedger = null;
     state.eventLog = [`第${state.era}纪开始。`, startDisasterEffects.warning];
     startTimer();
     saveGame(state);
@@ -799,6 +802,7 @@ function restorePanelScroll(root, state) {
 
 function renderSettlementPage(root, state, render) {
   const isTerminalSettlement = state.pendingVictory && state.era >= MAX_ERA;
+  const ledger = getSettlementLedger(state);
 
   root.innerHTML = `
     <main class="app-shell">
@@ -806,9 +810,14 @@ function renderSettlementPage(root, state, render) {
         <p class="eyebrow">第${state.era}纪结算</p>
         <h1>${isTerminalSettlement ? '第十五纪终末结算' : '本纪结算'}</h1>
         ${isTerminalSettlement ? '<p>第十五纪的灾难已经过去，文明没有完全熄灭。终末之后，先清点这一纪留下的代价。</p>' : ''}
-        <ol class="settlement-lines">
-          ${state.settlementLines.map((line) => `<li>${line}</li>`).join('')}
-        </ol>
+        ${renderEraLedger(ledger)}
+        <section class="settlement-summary">
+          <h2>本纪摘要</h2>
+          <p>${ledger.disasterSummary}</p>
+          <p>${ledger.maintenanceSummary}</p>
+          ${ledger.protectionSummaries.map((line) => `<p>${line}</p>`).join('')}
+          <p class="settlement-atmosphere">此处为氛围文案</p>
+        </section>
         ${renderSettlementAction(state)}
       </section>
     </main>
@@ -826,6 +835,7 @@ function renderSettlementPage(root, state, render) {
       state.isRunning = false;
       state.panelScrollTop = 0;
       state.pendingVictory = false;
+      resetEraLedgerTracking(state);
       saveGame(state);
       render();
     });
@@ -1281,6 +1291,95 @@ function renderSettlementAction(state) {
   return '<button class="primary-action" type="button" data-action="next-era">进入下一纪准备</button>';
 }
 
+function renderEraLedger(ledger) {
+  return `
+    <div class="era-ledger-grid">
+      ${renderResourceLedgerCard('food', '食物', ledger.resources.food)}
+      ${renderResourceLedgerCard('fuel', '燃料', ledger.resources.fuel)}
+      ${renderResourceLedgerCard('material', '材料', ledger.resources.material)}
+      ${renderHouseholdLedgerCard(ledger.households)}
+    </div>
+  `;
+}
+
+function renderResourceLedgerCard(resource, label, ledger) {
+  const lines = [
+    ledger.gained > 0 ? renderLedgerLine('+', ledger.gained, '本纪产出', 'ledger-plus') : '',
+    ledger.maintenance > 0 ? renderLedgerLine('-', ledger.maintenance, '建筑维护', 'ledger-minus') : '',
+    ledger.disasterLoss > 0 ? renderLedgerLine('-', ledger.disasterLoss, '灾害损失', 'ledger-minus') : '',
+    ledger.settlementCost > 0 ? renderLedgerLine('-', ledger.settlementCost, '本纪供养', 'ledger-minus') : '',
+    ...(ledger.shortages ?? []).map((shortage) => (
+      shortage.amount > 0
+        ? `<div class="ledger-line ledger-shortage"><strong>短缺 ${formatNumber(shortage.amount)}</strong><span class="ledger-source">来源：${shortage.source}</span></div>`
+        : ''
+    )),
+    renderLedgerLine('=', ledger.final, '本纪结余', 'ledger-total'),
+  ].filter(Boolean).join('');
+
+  return `
+    <section class="era-ledger-card" data-ledger-resource="${resource}">
+      <h2>${label}</h2>
+      <div class="ledger-balance">资源总量：${formatNumber(ledger.start)}</div>
+      ${lines}
+    </section>
+  `;
+}
+
+function renderHouseholdLedgerCard(ledger) {
+  return `
+    <section class="era-ledger-card" data-ledger-resource="households">
+      <h2>户口</h2>
+      <div class="ledger-balance">户口总量：${ledger.start}</div>
+      ${ledger.supplyDeaths > 0 ? renderLedgerLine('-', ledger.supplyDeaths, '食物 / 燃料短缺', 'ledger-minus') : ''}
+      ${ledger.materialDeaths > 0 ? renderLedgerLine('-', ledger.materialDeaths, '材料短缺', 'ledger-minus') : ''}
+      ${ledger.losses <= 0 ? renderLedgerLine('-', 0, '本纪损失', 'ledger-minus') : ''}
+      ${renderLedgerLine('=', ledger.final, '本纪剩余', 'ledger-total')}
+    </section>
+  `;
+}
+
+function renderLedgerLine(sign, value, source, className = '') {
+  return `
+    <div class="ledger-line ${className}">
+      <strong>${sign}${formatNumber(value)}</strong>
+      <span class="ledger-source">来源：${source}</span>
+    </div>
+  `;
+}
+
+function getSettlementLedger(state) {
+  const zeroResources = { food: 0, fuel: 0, material: 0 };
+  const production = state.eraResourceGains ?? state.productionThisEra ?? zeroResources;
+  const fallbackResources = Object.fromEntries(
+    Object.keys(zeroResources).map((resource) => [
+      resource,
+      {
+        start: state.resources?.[resource] ?? 0,
+        gained: production[resource] ?? 0,
+        maintenance: 0,
+        disasterLoss: 0,
+        settlementCost: 0,
+        shortages: [],
+        final: state.resources?.[resource] ?? 0,
+      },
+    ]),
+  );
+
+  return {
+    resources: state.lastEraLedger?.resources ?? fallbackResources,
+    households: state.lastEraLedger?.households ?? {
+      start: state.households ?? 0,
+      losses: 0,
+      supplyDeaths: 0,
+      materialDeaths: 0,
+      final: state.households ?? 0,
+    },
+    disasterSummary: state.lastEraLedger?.disasterSummary ?? '本纪灾害：暂无可用记录。',
+    maintenanceSummary: state.lastEraLedger?.maintenanceSummary ?? '建筑维护：暂无可用记录。',
+    protectionSummaries: state.lastEraLedger?.protectionSummaries ?? [],
+  };
+}
+
 function advanceEra(state, deltaSeconds) {
   const adjustedDelta = deltaSeconds * state.speed;
   const previousElapsed = ERA_SECONDS - state.timeLeft;
@@ -1327,6 +1426,7 @@ function produceResources(state, deltaSeconds) {
       );
       const gained = state.resources[rule.resource] - before;
       state.productionThisEra[rule.resource] += gained;
+      state.eraResourceGains = state.productionThisEra;
     }
   });
 }
@@ -1360,13 +1460,15 @@ function settleEra(state) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   const production = state.productionThisEra || { food: 0, fuel: 0, material: 0 };
   const beforeHouseholds = state.households;
+  const beforeSettlementResources = { ...state.resources };
+  const eraStartResources = getEraStartResources(state, beforeSettlementResources, production);
   const foodNeed = 1;
   const baseFuelNeed = 0.5;
   const disasterFuelNeed = baseFuelNeed * (disasterEffects.fuelMultiplier - 1) + disasterEffects.extraFuelPerHousehold;
   const adjustedDisasterFuelNeed = applyCalendarReductionToDisasterCost(disasterFuelNeed, state, disasterEffects);
   const fuelNeed = baseFuelNeed + adjustedDisasterFuelNeed;
   const maintenanceResult = applyBuildingMaintenance(state);
-  const inventoryLossLines = applyInventoryLosses(state, disasterEffects);
+  const inventoryLossResult = applyInventoryLosses(state, disasterEffects);
   const foodCanSupport = Math.floor(state.resources.food / foodNeed);
   const fuelCanSupport = Math.floor(state.resources.fuel / fuelNeed);
   const supported = Math.min(state.households, foodCanSupport, fuelCanSupport);
@@ -1380,13 +1482,61 @@ function settleEra(state) {
   const actualSupplyDeaths = supplyDeaths > 0 ? removeDeadHouseholds(state, supplyDeaths) : 0;
 
   const materialResult = applyMaterialDemand(state, disasterEffects);
+  const disasterSummary = createDisasterSummaryLine(disasterEffects);
+  const maintenanceSummary = createBuildingMaintenanceLine(maintenanceResult);
+
+  state.lastEraLedger = {
+    era: state.era,
+    resources: {
+      food: {
+        start: eraStartResources.food,
+        gained: production.food,
+        maintenance: 0,
+        disasterLoss: inventoryLossResult.losses.food,
+        settlementCost: consumedFood,
+        shortages: [],
+        final: state.resources.food,
+      },
+      fuel: {
+        start: eraStartResources.fuel,
+        gained: production.fuel,
+        maintenance: 0,
+        disasterLoss: roundResource(inventoryLossResult.losses.fuel + supported * adjustedDisasterFuelNeed),
+        settlementCost: roundResource(supported * baseFuelNeed),
+        shortages: [],
+        final: state.resources.fuel,
+      },
+      material: {
+        start: eraStartResources.material,
+        gained: production.material,
+        maintenance: maintenanceResult.paid,
+        disasterLoss: roundResource(inventoryLossResult.losses.material + materialResult.paid),
+        settlementCost: 0,
+        shortages: [
+          { amount: maintenanceResult.shortage, source: '建筑维护未完成' },
+          { amount: materialResult.shortage, source: '灾害材料需求' },
+        ],
+        final: state.resources.material,
+      },
+    },
+    households: {
+      start: beforeHouseholds,
+      losses: actualSupplyDeaths + materialResult.deaths,
+      supplyDeaths: actualSupplyDeaths,
+      materialDeaths: materialResult.deaths,
+      final: state.households,
+    },
+    disasterSummary,
+    maintenanceSummary,
+    protectionSummaries: createSettlementProtectionSummaries(disasterEffects, state),
+  };
 
   return [
     `本纪资源产出：食物 +${formatNumber(production.food)}，燃料 +${formatNumber(production.fuel)}，材料 +${formatNumber(production.material)}。`,
-    createBuildingMaintenanceLine(maintenanceResult),
-    createDisasterSummaryLine(disasterEffects),
+    maintenanceSummary,
+    disasterSummary,
     ...createEfficiencySettlementLines(disasterEffects),
-    ...inventoryLossLines,
+    ...inventoryLossResult.lines,
     ...createFuelSettlementLines(disasterEffects, state),
     `食物/燃料供养计算：食物可供养 ${foodCanSupport} 户，燃料可供养 ${fuelCanSupport} 户，实际供养 ${supported}/${beforeHouseholds} 户。`,
     `消耗：食物 ${formatNumber(consumedFood)}，燃料 ${formatNumber(consumedFuel)}。`,
@@ -1444,6 +1594,7 @@ function createBuildingMaintenanceLine(result) {
 
 function applyInventoryLosses(state, disasterEffects) {
   const lines = [];
+  const losses = { food: 0, fuel: 0, material: 0 };
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
   const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
 
@@ -1462,6 +1613,7 @@ function applyInventoryLosses(state, disasterEffects) {
       .map((note) => note.name);
     const source = names.length > 0 ? `${[...new Set(names)].join('、')}造成` : '';
     state.resources[resource] = roundResource(Math.max(0, before - lost));
+    losses[resource] = lost;
     lines.push(`灾害基础库存损失：${source}${RESOURCE_LABELS[resource]}库存损失${formatNumber(rate * 100)}%，基础损失 ${formatNumber(baseLoss)}。`);
     if (state.warehouseCount > 0) {
       lines.push(`仓库保护：仓库${state.warehouseCount}座，减少最终库存损失 ${formatNumber(warehouseProtectionRate * 100)}%，库存损失按 ${formatNumber((1 - warehouseProtectionRate) * 100)}% 结算。`);
@@ -1474,7 +1626,10 @@ function applyInventoryLosses(state, disasterEffects) {
       : `实际${RESOURCE_LABELS[resource]}损失：0。`);
   });
 
-  return lines.length > 0 ? lines : ['本纪无库存灾害损失。'];
+  return {
+    lines: lines.length > 0 ? lines : ['本纪无库存灾害损失。'],
+    losses,
+  };
 }
 
 function createEfficiencySettlementLines(disasterEffects) {
@@ -1518,6 +1673,8 @@ function applyMaterialDemand(state, disasterEffects) {
   if (baseDemand <= 0) {
     return {
       deaths: 0,
+      paid: 0,
+      shortage: 0,
       line: '本纪无额外材料需求。',
     };
   }
@@ -1532,18 +1689,56 @@ function applyMaterialDemand(state, disasterEffects) {
     state.resources.material = roundResource(state.resources.material - demand);
     return {
       deaths: 0,
+      paid: demand,
+      shortage: 0,
       line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}材料充足。`,
     };
   }
 
   const deaths = Math.ceil(shortage);
+  const paid = state.resources.material;
   state.resources.material = 0;
   const actualDeaths = removeDeadHouseholds(state, deaths);
 
   return {
     deaths: actualDeaths,
+    paid,
+    shortage,
     line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}缺口 ${formatNumber(shortage)}，死亡 ${actualDeaths} 户。`,
   };
+}
+
+function getEraStartResources(state, beforeSettlementResources, production) {
+  if (state.eraStartResources) {
+    return {
+      food: state.eraStartResources.food ?? 0,
+      fuel: state.eraStartResources.fuel ?? 0,
+      material: state.eraStartResources.material ?? 0,
+    };
+  }
+
+  return Object.fromEntries(
+    Object.keys(beforeSettlementResources).map((resource) => [
+      resource,
+      roundResource(Math.max(0, beforeSettlementResources[resource] - (production[resource] ?? 0))),
+    ]),
+  );
+}
+
+function createSettlementProtectionSummaries(disasterEffects, state) {
+  const summaries = [];
+  const warehouseProtectionRate = getWarehouseProtectionRate(state);
+  const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
+
+  if (state.warehouseCount > 0 && Object.values(disasterEffects.inventoryLoss).some((rate) => rate > 0)) {
+    summaries.push(`仓库保护：最终库存损失减少 ${formatNumber(warehouseProtectionRate * 100)}%。`);
+  }
+
+  if (calendarReductionRate > 0) {
+    summaries.push(`历法准备：最终灾害代价减少 ${formatNumber(calendarReductionRate * 100)}%。`);
+  }
+
+  return summaries;
 }
 
 function removeDeadHouseholds(state, deaths) {
@@ -2059,6 +2254,7 @@ function prepareGeneration(state, mapData) {
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
+  resetEraLedgerTracking(state);
   state.settlementLines = [];
   state.pendingVictory = false;
   state.settingsOpen = false;
@@ -2110,6 +2306,7 @@ function resetRunToStart(state) {
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
+  resetEraLedgerTracking(state);
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
   state.pendingVictory = false;
@@ -2119,6 +2316,10 @@ function resetRunToStart(state) {
 
 function restoreSavedState(state, savedState) {
   Object.assign(state, savedState);
+  state.eraResourceGains ??= state.productionThisEra ?? { food: 0, fuel: 0, material: 0 };
+  state.productionThisEra ??= state.eraResourceGains;
+  state.eraStartResources ??= null;
+  state.lastEraLedger ??= null;
   state.isRunning = false;
   state.speed = 1;
   state.openPanel = null;
@@ -2128,6 +2329,13 @@ function restoreSavedState(state, savedState) {
   state.tutorialOpen = false;
   state.debugConsoleOpen = false;
   closeAllModals(state);
+}
+
+function resetEraLedgerTracking(state) {
+  state.eraStartResources = null;
+  state.eraResourceGains = { food: 0, fuel: 0, material: 0 };
+  state.productionThisEra = { food: 0, fuel: 0, material: 0 };
+  state.lastEraLedger = null;
 }
 
 function formatSaveTime(savedAt) {

@@ -42,6 +42,7 @@ export function prepareGeneration(state, mapData) {
   state.isRunning = false;
   state.timeLeft = ERA_SECONDS;
   state.speed = 1;
+  resetEraLedgerTracking(state);
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
   state.pendingVictory = false;
@@ -66,6 +67,10 @@ export function startEra(state) {
   const disasterEffects = getEraDisasterEffects(state.mapType, state.era, state);
   state.isRunning = true;
   state.timeLeft = ERA_SECONDS;
+  state.eraStartResources = { ...state.resources };
+  state.eraResourceGains = { food: 0, fuel: 0, material: 0 };
+  state.productionThisEra = state.eraResourceGains;
+  state.lastEraLedger = null;
   state.eventLog = [
     `第 ${state.era} 纪开始。${disasterEffects.notes.join(' ') || '本纪风平浪静。'}`,
   ];
@@ -128,6 +133,7 @@ export function goToNextEra(state) {
   state.eventLog = [];
   state.timeLeft = ERA_SECONDS;
   state.isRunning = false;
+  resetEraLedgerTracking(state);
   state.settlementLines = [];
   state.revealedSettlementLines = 0;
   state.pendingVictory = false;
@@ -171,7 +177,10 @@ function produceResources(state, deltaSeconds) {
     while (work.progress >= rule.progressNeeded) {
       work.progress -= rule.progressNeeded;
       const legacyBonus = rule.resource === 'food' ? getLegacyValue(state, 'grasslandYield') : 0;
-      addResource(state, rule.resource, rule.amount + legacyBonus);
+      const gained = addResource(state, rule.resource, rule.amount + legacyBonus);
+      state.eraResourceGains ??= { food: 0, fuel: 0, material: 0 };
+      state.eraResourceGains[rule.resource] += gained;
+      state.productionThisEra = state.eraResourceGains;
       state.eventLog.push(`${rule.name}完成：${rule.resource === 'food' ? '食物' : rule.resource === 'fuel' ? '燃料' : '材料'} +${rule.amount + legacyBonus}。`);
     }
   });
@@ -288,7 +297,16 @@ function assignedCount(state) {
 }
 
 function addResource(state, resource, amount) {
+  const before = state.resources[resource];
   state.resources[resource] = Math.min(state.resourceCaps[resource], state.resources[resource] + amount);
+  return state.resources[resource] - before;
+}
+
+function resetEraLedgerTracking(state) {
+  state.eraStartResources = null;
+  state.eraResourceGains = { food: 0, fuel: 0, material: 0 };
+  state.productionThisEra = state.eraResourceGains;
+  state.lastEraLedger = null;
 }
 
 function getLegacyValue(state, key) {

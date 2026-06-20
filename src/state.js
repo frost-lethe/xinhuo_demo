@@ -62,6 +62,13 @@ export function createInitialState() {
     isRunning: false,
     timeLeft: ERA_SECONDS,
     speed: 1,
+    eraStartResources: null,
+    eraResourceGains: {
+      food: 0,
+      fuel: 0,
+      material: 0,
+    },
+    lastEraLedger: null,
     settlementLines: [],
     revealedSettlementLines: 0,
     pendingVictory: false,
