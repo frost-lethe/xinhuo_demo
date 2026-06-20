@@ -1417,16 +1417,41 @@ function renderDisasterFormula(breakdown) {
 }
 
 function renderHouseholdLedgerCard(ledger) {
+  const lossBreakdowns = getPopulationLossBreakdowns(ledger);
+
   return `
     <section class="era-ledger-card" data-ledger-resource="households">
       <h2>户口</h2>
       <div class="ledger-balance">户口总量：${ledger.start}</div>
-      ${ledger.supplyDeaths > 0 ? renderLedgerLine('-', ledger.supplyDeaths, '食物 / 燃料短缺', 'ledger-minus') : ''}
-      ${ledger.materialDeaths > 0 ? renderLedgerLine('-', ledger.materialDeaths, '材料短缺', 'ledger-minus') : ''}
-      ${ledger.losses <= 0 ? renderLedgerLine('-', 0, '本纪损失', 'ledger-minus') : ''}
+      ${lossBreakdowns.map((loss) => (
+        renderLedgerLine('-', loss.deaths, loss.label, 'ledger-minus ledger-population-loss')
+      )).join('')}
+      ${lossBreakdowns.length === 0 ? renderLedgerLine('-', 0, '无新增损失', 'ledger-neutral') : ''}
       ${renderLedgerLine('=', ledger.final, '本纪剩余', 'ledger-total')}
     </section>
   `;
+}
+
+function getPopulationLossBreakdowns(ledger) {
+  if (Array.isArray(ledger.lossBreakdowns)) {
+    return ledger.lossBreakdowns.filter((loss) => loss?.deaths > 0);
+  }
+
+  const fallback = [];
+  if (ledger.supplyDeaths > 0) {
+    fallback.push({ deaths: ledger.supplyDeaths, label: '食物 / 燃料短缺' });
+  }
+  if (ledger.materialDeaths > 0) {
+    fallback.push({ deaths: ledger.materialDeaths, label: '材料短缺' });
+  }
+
+  const recordedDeaths = fallback.reduce((sum, loss) => sum + loss.deaths, 0);
+  const unclassifiedDeaths = Math.max(0, (ledger.losses ?? ledger.start - ledger.final) - recordedDeaths);
+  if (unclassifiedDeaths > 0) {
+    fallback.push({ deaths: unclassifiedDeaths, label: '本纪损失（未分类）' });
+  }
+
+  return fallback;
 }
 
 function renderLedgerLine(sign, value, source, className = '') {
@@ -1466,6 +1491,7 @@ function getSettlementLedger(state) {
       losses: 0,
       supplyDeaths: 0,
       materialDeaths: 0,
+      lossBreakdowns: [],
       final: state.households ?? 0,
     },
     disasterSummary: state.lastEraLedger?.disasterSummary ?? '本纪灾害：暂无可用记录。',
@@ -1639,6 +1665,13 @@ function settleEra(state) {
       final: state.resources.material,
     }),
   };
+  const populationLossBreakdowns = createPopulationLossBreakdowns({
+    actualSupplyDeaths,
+    foodCanSupport,
+    fuelCanSupport,
+    materialDeaths: materialResult.deaths,
+    disasterEffects,
+  });
 
   state.lastEraLedger = {
     era: state.era,
@@ -1648,6 +1681,11 @@ function settleEra(state) {
       losses: actualSupplyDeaths + materialResult.deaths,
       supplyDeaths: actualSupplyDeaths,
       materialDeaths: materialResult.deaths,
+      lossBreakdowns: closePopulationLossBreakdowns(
+        beforeHouseholds,
+        state.households,
+        populationLossBreakdowns,
+      ),
       final: state.households,
     },
     disasterSummary,
@@ -1939,6 +1977,100 @@ function getLedgerAdjustmentLabel(resource, difference) {
   }
 
   return `${RESOURCE_LABELS[resource]}结算调整`;
+}
+
+function createPopulationLossBreakdowns({
+  actualSupplyDeaths,
+  foodCanSupport,
+  fuelCanSupport,
+  materialDeaths,
+  disasterEffects,
+}) {
+  const breakdowns = [];
+
+  if (actualSupplyDeaths > 0) {
+    breakdowns.push({
+      deaths: actualSupplyDeaths,
+      label: getSupplyShortageDeathLabel(foodCanSupport, fuelCanSupport, disasterEffects),
+      kind: 'shortage',
+      resource: foodCanSupport < fuelCanSupport
+        ? 'food'
+        : fuelCanSupport < foodCanSupport
+          ? 'fuel'
+          : null,
+    });
+  }
+
+  if (materialDeaths > 0) {
+    breakdowns.push({
+      deaths: materialDeaths,
+      label: getMaterialShortageDeathLabel(disasterEffects),
+      kind: 'shortage',
+      resource: 'material',
+    });
+  }
+
+  return breakdowns;
+}
+
+function closePopulationLossBreakdowns(start, final, breakdowns) {
+  const actualLosses = Math.max(0, start - final);
+  const recordedLosses = breakdowns.reduce((sum, loss) => sum + loss.deaths, 0);
+  const unclassifiedLosses = Math.max(0, actualLosses - recordedLosses);
+
+  return unclassifiedLosses > 0
+    ? [
+      ...breakdowns,
+      {
+        deaths: unclassifiedLosses,
+        label: '本纪损失（未分类）',
+        kind: 'unclassified',
+        resource: null,
+      },
+    ]
+    : breakdowns;
+}
+
+function getSupplyShortageDeathLabel(foodCanSupport, fuelCanSupport, disasterEffects) {
+  if (foodCanSupport < fuelCanSupport) {
+    return getFoodShortageDeathLabel(disasterEffects);
+  }
+
+  if (fuelCanSupport < foodCanSupport) {
+    return getFuelShortageDeathLabel(disasterEffects);
+  }
+
+  return '食物 / 燃料短缺';
+}
+
+function getFoodShortageDeathLabel(disasterEffects) {
+  const names = disasterEffects.disasterNames;
+
+  if (names.includes('终末失序')) return '终末食物短缺';
+  if (names.includes('大旱')) return '大旱食物短缺';
+  if (names.includes('干旱')) return '干旱食物短缺';
+  if (names.includes('洪水')) return '洪水后食物短缺';
+  return '食物短缺';
+}
+
+function getFuelShortageDeathLabel(disasterEffects) {
+  const names = disasterEffects.disasterNames;
+
+  if (names.includes('终末失序')) return '终末燃料短缺';
+  if (names.includes('严冬')) return '严冬燃料短缺';
+  if (names.includes('寒潮')) return '寒潮燃料短缺';
+  if (names.includes('洪水')) return '洪水后燃料短缺';
+  return '燃料短缺';
+}
+
+function getMaterialShortageDeathLabel(disasterEffects) {
+  const names = disasterEffects.disasterNames;
+
+  if (names.includes('终末失序')) return '终末材料短缺';
+  if (names.includes('地震')) return '地震时材料缺乏';
+  if (names.includes('兽群')) return '兽潮冲击';
+  if (names.includes('洪水')) return '洪水修复短缺';
+  return '材料短缺';
 }
 
 function createCalendarModifier(reductionRate) {

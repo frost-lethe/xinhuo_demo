@@ -641,6 +641,14 @@ button:disabled {
   color: #9b352b;
 }
 
+.ledger-population-loss .ledger-source {
+  color: #7f2f28;
+}
+
+.ledger-neutral {
+  opacity: 0.65;
+}
+
 .ledger-original-loss {
   opacity: 0.55;
 }
