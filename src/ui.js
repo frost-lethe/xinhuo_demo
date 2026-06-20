@@ -863,6 +863,19 @@ function renderSettlementPage(root, state, render) {
       render();
     });
   }
+
+  root.querySelectorAll('[data-ledger-detail-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const detail = root.querySelector(`[data-ledger-formula="${button.dataset.ledgerDetailToggle}"]`);
+      if (!detail) {
+        return;
+      }
+
+      const expanded = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!expanded));
+      detail.hidden = expanded;
+    });
+  });
 }
 
 function renderPlaceholderPage(root, title, body) {
@@ -1303,11 +1316,19 @@ function renderEraLedger(ledger) {
 }
 
 function renderResourceLedgerCard(resource, label, ledger) {
+  const disasterBreakdowns = getDisasterBreakdowns(ledger);
   const lines = [
     ledger.gained > 0 ? renderLedgerLine('+', ledger.gained, '本纪产出', 'ledger-plus') : '',
     ledger.maintenance > 0 ? renderLedgerLine('-', ledger.maintenance, '建筑维护', 'ledger-minus') : '',
-    ledger.disasterLoss > 0 ? renderLedgerLine('-', ledger.disasterLoss, '灾害损失', 'ledger-minus') : '',
+    renderDisasterLedgerLines(resource, ledger, disasterBreakdowns),
     ledger.settlementCost > 0 ? renderLedgerLine('-', ledger.settlementCost, '本纪供养', 'ledger-minus') : '',
+    ...(ledger.adjustments ?? []).map((adjustment) => (
+      adjustment.amount > 0
+        ? renderLedgerLine('-', adjustment.amount, adjustment.label, 'ledger-minus')
+        : adjustment.amount < 0
+          ? renderLedgerLine('+', Math.abs(adjustment.amount), adjustment.label, 'ledger-plus')
+          : ''
+    )),
     ...(ledger.shortages ?? []).map((shortage) => (
       shortage.amount > 0
         ? `<div class="ledger-line ledger-shortage"><strong>短缺 ${formatNumber(shortage.amount)}</strong><span class="ledger-source">来源：${shortage.source}</span></div>`
@@ -1322,6 +1343,76 @@ function renderResourceLedgerCard(resource, label, ledger) {
       <div class="ledger-balance">资源总量：${formatNumber(ledger.start)}</div>
       ${lines}
     </section>
+  `;
+}
+
+function getDisasterBreakdowns(ledger) {
+  if (Array.isArray(ledger.disasterBreakdowns)) {
+    return ledger.disasterBreakdowns.filter(Boolean);
+  }
+
+  return ledger.disasterBreakdown ? [ledger.disasterBreakdown] : [];
+}
+
+function renderDisasterLedgerLines(resource, ledger, breakdowns) {
+  if (breakdowns.length === 0) {
+    return ledger.disasterLoss > 0
+      ? renderLedgerLine('-', ledger.disasterLoss, '灾害损失', 'ledger-minus')
+      : '';
+  }
+
+  return breakdowns
+    .map((breakdown, index) => renderDisasterBreakdown(resource, breakdown, index))
+    .join('');
+}
+
+function renderDisasterBreakdown(resource, breakdown, index) {
+  const modifiers = breakdown.modifiers ?? [];
+  const sourceLabel = breakdown.sourceLabel ?? '灾害损失';
+  const hasVisibleReduction = modifiers.length > 0
+    && formatNumber(breakdown.baseLoss) !== formatNumber(breakdown.mitigatedLoss);
+
+  if (!hasVisibleReduction) {
+    return renderLedgerLine('-', breakdown.actualLoss, sourceLabel, 'ledger-minus');
+  }
+
+  const detailId = `ledger-${resource}-disaster-${index}`;
+  return `
+    <div class="ledger-line ledger-minus ledger-original-loss">
+      <strong>-${formatNumber(breakdown.baseLoss)}</strong>
+      <span class="ledger-source">来源：${sourceLabel}原损失</span>
+    </div>
+    <div class="ledger-line ledger-minus ledger-effective-loss">
+      <strong>-${formatNumber(breakdown.actualLoss)}</strong>
+      <button
+        class="ledger-detail-toggle"
+        type="button"
+        data-ledger-detail-toggle="${detailId}"
+        aria-expanded="false"
+      >来源：实际${sourceLabel} ⓘ</button>
+    </div>
+    <div class="ledger-formula-detail" data-ledger-formula="${detailId}" hidden>
+      ${renderDisasterFormula(breakdown)}
+    </div>
+  `;
+}
+
+function renderDisasterFormula(breakdown) {
+  const modifiers = breakdown.modifiers ?? [];
+  const factors = modifiers
+    .map((modifier) => `× ${formatNumber(modifier.factor * 100)}%（${modifier.factorLabel}）`)
+    .join(' ');
+  const formula = `实际损失 = 原损失 ${factors}`;
+  const paidNote = formatNumber(breakdown.actualLoss) !== formatNumber(breakdown.mitigatedLoss)
+    ? `<div>减免后应结算 ${formatNumber(breakdown.mitigatedLoss)}，资源不足，实际扣除 ${formatNumber(breakdown.actualLoss)}。</div>`
+    : `<div>最终扣除 ${formatNumber(breakdown.actualLoss)}。</div>`;
+
+  return `
+    <div>${formula}</div>
+    ${modifiers.map((modifier) => (
+      `<div>${modifier.label}：减免 ${formatNumber(modifier.reductionRate * 100)}%，实际承受 ${formatNumber(modifier.factor * 100)}%。</div>`
+    )).join('')}
+    ${paidNote}
   `;
 }
 
@@ -1358,7 +1449,10 @@ function getSettlementLedger(state) {
         gained: production[resource] ?? 0,
         maintenance: 0,
         disasterLoss: 0,
+        disasterBreakdown: null,
+        disasterBreakdowns: [],
         settlementCost: 0,
+        adjustments: [],
         shortages: [],
         final: state.resources?.[resource] ?? 0,
       },
@@ -1484,41 +1578,71 @@ function settleEra(state) {
   const materialResult = applyMaterialDemand(state, disasterEffects);
   const disasterSummary = createDisasterSummaryLine(disasterEffects);
   const maintenanceSummary = createBuildingMaintenanceLine(maintenanceResult);
+  const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
+  const fuelDisasterBreakdown = createDisasterBreakdown({
+    baseLoss: supported * disasterFuelNeed,
+    mitigatedLoss: supported * adjustedDisasterFuelNeed,
+    actualLoss: supported * adjustedDisasterFuelNeed,
+    modifiers: createCalendarModifier(calendarReductionRate),
+    sourceLabel: getExtraDisasterLossLabel(disasterEffects, 'fuel'),
+  });
+  const materialDisasterBreakdown = materialResult.baseDemand > 0
+    ? createDisasterBreakdown({
+      baseLoss: materialResult.baseDemand,
+      mitigatedLoss: materialResult.demand,
+      actualLoss: materialResult.paid,
+      modifiers: createCalendarModifier(calendarReductionRate),
+      sourceLabel: getExtraDisasterLossLabel(disasterEffects, 'material'),
+    })
+    : null;
+
+  const resources = {
+    food: createClosedResourceLedger({
+      resource: 'food',
+      start: eraStartResources.food,
+      gained: production.food,
+      maintenance: 0,
+      disasterBreakdowns: [
+        inventoryLossResult.breakdowns.food,
+      ],
+      settlementCost: consumedFood,
+      shortages: [],
+      final: state.resources.food,
+    }),
+    fuel: createClosedResourceLedger({
+      resource: 'fuel',
+      start: eraStartResources.fuel,
+      gained: production.fuel,
+      maintenance: 0,
+      disasterBreakdowns: [
+        inventoryLossResult.breakdowns.fuel,
+        fuelDisasterBreakdown,
+      ],
+      settlementCost: roundResource(supported * baseFuelNeed),
+      shortages: [],
+      final: state.resources.fuel,
+    }),
+    material: createClosedResourceLedger({
+      resource: 'material',
+      start: eraStartResources.material,
+      gained: production.material,
+      maintenance: maintenanceResult.paid,
+      disasterBreakdowns: [
+        inventoryLossResult.breakdowns.material,
+        materialDisasterBreakdown,
+      ],
+      settlementCost: 0,
+      shortages: [
+        { amount: maintenanceResult.shortage, source: '建筑维护未完成' },
+        { amount: materialResult.shortage, source: '灾害材料需求' },
+      ],
+      final: state.resources.material,
+    }),
+  };
 
   state.lastEraLedger = {
     era: state.era,
-    resources: {
-      food: {
-        start: eraStartResources.food,
-        gained: production.food,
-        maintenance: 0,
-        disasterLoss: inventoryLossResult.losses.food,
-        settlementCost: consumedFood,
-        shortages: [],
-        final: state.resources.food,
-      },
-      fuel: {
-        start: eraStartResources.fuel,
-        gained: production.fuel,
-        maintenance: 0,
-        disasterLoss: roundResource(inventoryLossResult.losses.fuel + supported * adjustedDisasterFuelNeed),
-        settlementCost: roundResource(supported * baseFuelNeed),
-        shortages: [],
-        final: state.resources.fuel,
-      },
-      material: {
-        start: eraStartResources.material,
-        gained: production.material,
-        maintenance: maintenanceResult.paid,
-        disasterLoss: roundResource(inventoryLossResult.losses.material + materialResult.paid),
-        settlementCost: 0,
-        shortages: [
-          { amount: maintenanceResult.shortage, source: '建筑维护未完成' },
-          { amount: materialResult.shortage, source: '灾害材料需求' },
-        ],
-        final: state.resources.material,
-      },
-    },
+    resources,
     households: {
       start: beforeHouseholds,
       losses: actualSupplyDeaths + materialResult.deaths,
@@ -1595,6 +1719,7 @@ function createBuildingMaintenanceLine(result) {
 function applyInventoryLosses(state, disasterEffects) {
   const lines = [];
   const losses = { food: 0, fuel: 0, material: 0 };
+  const breakdowns = { food: null, fuel: null, material: null };
   const warehouseProtectionRate = getWarehouseProtectionRate(state);
   const calendarReductionRate = getCalendarDisasterReductionRate(state, disasterEffects);
 
@@ -1614,6 +1739,16 @@ function applyInventoryLosses(state, disasterEffects) {
     const source = names.length > 0 ? `${[...new Set(names)].join('、')}造成` : '';
     state.resources[resource] = roundResource(Math.max(0, before - lost));
     losses[resource] = lost;
+    breakdowns[resource] = createDisasterBreakdown({
+      baseLoss,
+      mitigatedLoss: calendarAdjustedLoss,
+      actualLoss: lost,
+      modifiers: [
+        ...createWarehouseModifier(warehouseProtectionRate),
+        ...createCalendarModifier(calendarReductionRate),
+      ],
+      sourceLabel: getInventoryLossLabel(names),
+    });
     lines.push(`灾害基础库存损失：${source}${RESOURCE_LABELS[resource]}库存损失${formatNumber(rate * 100)}%，基础损失 ${formatNumber(baseLoss)}。`);
     if (state.warehouseCount > 0) {
       lines.push(`仓库保护：仓库${state.warehouseCount}座，减少最终库存损失 ${formatNumber(warehouseProtectionRate * 100)}%，库存损失按 ${formatNumber((1 - warehouseProtectionRate) * 100)}% 结算。`);
@@ -1629,6 +1764,7 @@ function applyInventoryLosses(state, disasterEffects) {
   return {
     lines: lines.length > 0 ? lines : ['本纪无库存灾害损失。'],
     losses,
+    breakdowns,
   };
 }
 
@@ -1673,6 +1809,8 @@ function applyMaterialDemand(state, disasterEffects) {
   if (baseDemand <= 0) {
     return {
       deaths: 0,
+      baseDemand: 0,
+      demand: 0,
       paid: 0,
       shortage: 0,
       line: '本纪无额外材料需求。',
@@ -1689,6 +1827,8 @@ function applyMaterialDemand(state, disasterEffects) {
     state.resources.material = roundResource(state.resources.material - demand);
     return {
       deaths: 0,
+      baseDemand,
+      demand,
       paid: demand,
       shortage: 0,
       line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}材料充足。`,
@@ -1702,10 +1842,129 @@ function applyMaterialDemand(state, disasterEffects) {
 
   return {
     deaths: actualDeaths,
+    baseDemand,
+    demand,
     paid,
     shortage,
     line: `灾害材料需求：基础需求 ${formatNumber(baseDemand)}。${calendarText}缺口 ${formatNumber(shortage)}，死亡 ${actualDeaths} 户。`,
   };
+}
+
+function createDisasterBreakdown({
+  baseLoss,
+  mitigatedLoss,
+  actualLoss,
+  modifiers,
+  sourceLabel,
+}) {
+  if (baseLoss <= 0 || actualLoss <= 0) {
+    return null;
+  }
+
+  return {
+    baseLoss: roundResource(baseLoss),
+    mitigatedLoss: roundResource(mitigatedLoss),
+    actualLoss: roundResource(actualLoss),
+    modifiers,
+    sourceLabel,
+  };
+}
+
+function createClosedResourceLedger({
+  resource,
+  start,
+  gained,
+  maintenance,
+  disasterBreakdowns,
+  settlementCost,
+  shortages,
+  final,
+}) {
+  const activeBreakdowns = disasterBreakdowns.filter(Boolean);
+  const disasterLoss = roundResource(
+    activeBreakdowns.reduce((sum, breakdown) => sum + breakdown.actualLoss, 0),
+  );
+  const expectedFinal = roundResource(start + gained - maintenance - disasterLoss - settlementCost);
+  const difference = roundResource(final - expectedFinal);
+  const adjustments = Math.abs(difference) >= 0.1
+    ? [{
+      amount: roundResource(-difference),
+      label: getLedgerAdjustmentLabel(resource, difference),
+    }]
+    : [];
+
+  return {
+    start,
+    gained,
+    maintenance,
+    disasterLoss,
+    disasterBreakdown: activeBreakdowns[0] ?? null,
+    disasterBreakdowns: activeBreakdowns,
+    settlementCost,
+    shortages,
+    adjustments,
+    final,
+  };
+}
+
+function getInventoryLossLabel(names) {
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.length > 0
+    ? `${uniqueNames.join('、')}库存损失`
+    : '灾害库存损失';
+}
+
+function getExtraDisasterLossLabel(disasterEffects, resource) {
+  const names = disasterEffects.disasterNames;
+
+  if (resource === 'material') {
+    if (names.includes('地震')) return '地震损毁';
+    if (names.includes('兽群')) return '兽潮冲击';
+    if (names.includes('洪水')) return '洪水修复';
+    if (names.includes('终末失序')) return '终末额外材料损失';
+  }
+
+  if (resource === 'fuel') {
+    if (names.includes('寒潮')) return '寒潮额外燃料需求';
+    if (names.includes('严冬')) return '严冬额外燃料需求';
+    if (names.includes('终末失序')) return '终末额外燃料需求';
+  }
+
+  return '灾害额外损失';
+}
+
+function getLedgerAdjustmentLabel(resource, difference) {
+  if (difference < 0) {
+    return `${RESOURCE_LABELS[resource]}其他实际扣除`;
+  }
+
+  return `${RESOURCE_LABELS[resource]}结算调整`;
+}
+
+function createCalendarModifier(reductionRate) {
+  if (reductionRate <= 0) {
+    return [];
+  }
+
+  return [{
+    label: '历法减免',
+    factorLabel: '历法后承受',
+    reductionRate,
+    factor: 1 - reductionRate,
+  }];
+}
+
+function createWarehouseModifier(protectionRate) {
+  if (protectionRate <= 0) {
+    return [];
+  }
+
+  return [{
+    label: '仓库保护',
+    factorLabel: '仓库保护后',
+    reductionRate: protectionRate,
+    factor: 1 - protectionRate,
+  }];
 }
 
 function getEraStartResources(state, beforeSettlementResources, production) {

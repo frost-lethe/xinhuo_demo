@@ -641,6 +641,45 @@ button:disabled {
   color: #9b352b;
 }
 
+.ledger-original-loss {
+  opacity: 0.55;
+}
+
+.ledger-original-loss strong {
+  text-decoration: line-through;
+}
+
+.ledger-effective-loss {
+  font-weight: 600;
+}
+
+.ledger-detail-toggle {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.ledger-formula-detail {
+  border-top: 1px dashed rgb(115 91 54 / 0.28);
+  margin-top: -2px;
+  padding: 8px 0 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.ledger-formula-detail[hidden] {
+  display: none;
+}
+
 .ledger-total {
   border-top-color: var(--border);
   font-size: 1.05rem;
